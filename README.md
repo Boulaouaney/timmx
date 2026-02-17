@@ -5,6 +5,7 @@ formats.
 
 Current format support:
 - Core ML (`timmx export coreml ...`)
+- LiteRT / TFLite (`timmx export litert ...`)
 - ONNX (`timmx export onnx ...`)
 - torch.export archive (`timmx export torch-export ...`)
 
@@ -44,6 +45,45 @@ uv run timmx export coreml resnet18 \
   --batch-size 2 \
   --batch-upper-bound 8 \
   --output ./artifacts/resnet18_dynamic.mlpackage
+```
+
+### Export a model to LiteRT / TFLite
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode fp32 \
+  --output ./artifacts/resnet18.tflite
+```
+
+LiteRT modes:
+- `fp32`
+- `fp16`
+- `dynamic-int8`
+- `int8`
+
+Example `fp16`:
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode fp16 \
+  --output ./artifacts/resnet18_fp16.tflite
+```
+
+Example `int8`:
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode int8 \
+  --output ./artifacts/resnet18_int8.tflite
+```
+
+Enable NHWC output layout (first output only):
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode fp32 \
+  --nhwc-output \
+  --output ./artifacts/resnet18_nhwc.tflite
 ```
 
 ### Export a fine-tuned checkpoint to ONNX

@@ -8,6 +8,7 @@ touch points.
 
 Current built-in backends:
 - `coreml`
+- `litert`
 - `onnx`
 - `torch-export`
 
@@ -48,6 +49,8 @@ The CLI must remain format-agnostic and dispatch through the registry.
 
 Runtime nuance:
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
+- For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`.
+- For `litert`, `--nhwc-output` applies only to tensor outputs with rank `>= 3`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 
 ## Adding a New Export Backend
