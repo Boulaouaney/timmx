@@ -4,6 +4,7 @@
 formats.
 
 Current format support:
+- Core ML (`timmx export coreml ...`)
 - ONNX (`timmx export onnx ...`)
 - torch.export archive (`timmx export torch-export ...`)
 
@@ -23,6 +24,26 @@ uv run timmx --help
 
 ```bash
 uv run timmx export onnx resnet18 --pretrained --output ./artifacts/resnet18.onnx
+```
+
+### Export a model to Core ML
+
+```bash
+uv run timmx export coreml resnet18 \
+  --pretrained \
+  --convert-to mlprogram \
+  --compute-precision float16 \
+  --output ./artifacts/resnet18.mlpackage
+```
+
+For flexible batch in Core ML:
+
+```bash
+uv run timmx export coreml resnet18 \
+  --dynamic-batch \
+  --batch-size 2 \
+  --batch-upper-bound 8 \
+  --output ./artifacts/resnet18_dynamic.mlpackage
 ```
 
 ### Export a fine-tuned checkpoint to ONNX

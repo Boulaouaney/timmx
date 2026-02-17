@@ -7,6 +7,7 @@ deployment formats. Keep architecture backend-oriented so new formats can be add
 touch points.
 
 Current built-in backends:
+- `coreml`
 - `onnx`
 - `torch-export`
 
@@ -46,6 +47,7 @@ Every backend must:
 The CLI must remain format-agnostic and dispatch through the registry.
 
 Runtime nuance:
+- For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 
 ## Adding a New Export Backend
