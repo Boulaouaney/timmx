@@ -1,0 +1,73 @@
+# AGENTS.md
+
+## Purpose
+
+This repository provides `timmx`, an extensible CLI/package for exporting `timm` models to
+deployment formats. Keep architecture backend-oriented so new formats can be added with minimal
+touch points.
+
+## Non-Negotiable Tooling Rules
+
+- Use `uv` for dependency management, execution, and builds.
+- Script execution: `uv run script.py`
+- Python interpreter: `uv run python`
+- Module execution: `uv run -m module_name`
+- CLI tools (including this project): `uv run timmx ...`
+- Build packages with `uv build`
+- Run Ruff only through `uvx ruff`
+
+## Python and Typing Rules
+
+- Minimum Python version is `>=3.11`.
+- Use modern built-in typing syntax (`list[str]`, `dict[str, int]`, `A | B`).
+- Do not import from `typing` unless a genuinely missing built-in type feature is required.
+
+## Project Layout
+
+- Source package: `src/timmx/`
+- Export backend interface: `src/timmx/export/base.py`
+- Backend registry: `src/timmx/export/registry.py`
+- Backend implementations: `src/timmx/export/<format>_backend.py`
+- CLI entrypoint: `src/timmx/cli.py`
+- Tests: `tests/`
+
+## Backend Design Contract
+
+Every backend must:
+- Implement `ExportBackend` (`name`, `help`, `add_arguments`, `run`)
+- Own all format-specific CLI flags in its own module
+- Return integer exit codes and raise `timmx.errors.TimmxError` subclasses for user-facing failures
+
+The CLI must remain format-agnostic and dispatch through the registry.
+
+## Adding a New Export Backend
+
+1. Create `src/timmx/export/<format>_backend.py`.
+2. Implement `ExportBackend` with concise, format-specific CLI options.
+3. Register the backend in `create_builtin_registry()` in
+   `src/timmx/export/registry.py`.
+4. Add tests:
+   - CLI argument parsing coverage
+   - Registry coverage
+   - At least one end-to-end export smoke test (or a targeted unit test when runtime export is
+     impractical)
+5. Update `README.md` format support and usage examples.
+
+## Quality Gates Before Shipping
+
+Run these from repo root:
+
+```bash
+uv sync --group dev
+uvx ruff format .
+uvx ruff check .
+uv run pytest
+uv build
+```
+
+## Scope Discipline
+
+- Keep changes surgical.
+- Avoid speculative abstractions.
+- Add configuration only when a real backend requires it.
+
