@@ -31,3 +31,25 @@ def test_export_onnx_arguments_parse() -> None:
     assert args.model_name == "resnet18"
     assert args.check is False
     assert args.dynamic_batch is True
+
+
+def test_export_torch_export_arguments_parse() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "export",
+            "torch-export",
+            "resnet18",
+            "--output",
+            "artifacts/model.pt2",
+            "--dynamic-batch",
+            "--strict",
+            "--no-verify",
+        ]
+    )
+    assert args.command == "export"
+    assert args.format == "torch-export"
+    assert args.model_name == "resnet18"
+    assert args.dynamic_batch is True
+    assert args.strict is True
+    assert args.verify is False

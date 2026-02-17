@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from timmx.export.base import ExportBackend
 from timmx.export.onnx_backend import OnnxBackend
+from timmx.export.torch_export_backend import TorchExportBackend
 
 
 class BackendRegistry:
@@ -31,4 +32,5 @@ class BackendRegistry:
 def create_builtin_registry() -> BackendRegistry:
     registry = BackendRegistry()
     registry.register(OnnxBackend())
+    registry.register(TorchExportBackend())
     return registry

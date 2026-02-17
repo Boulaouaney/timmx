@@ -3,19 +3,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import onnx
 import torch
 
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
 from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
 
-DEFAULT_OPSET = 18
 
-
-class OnnxBackend(ExportBackend):
-    name = "onnx"
-    help = "Export a timm model to ONNX."
+class TorchExportBackend(ExportBackend):
+    name = "torch-export"
+    help = "Export a timm model with torch.export (.pt2)."
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("model_name", help="timm model name, e.g. resnet18")
@@ -23,7 +20,7 @@ class OnnxBackend(ExportBackend):
             "--output",
             type=Path,
             required=True,
-            help="Path to write the ONNX model.",
+            help="Path to write the exported program archive (typically .pt2).",
         )
         parser.add_argument(
             "--checkpoint",
@@ -59,12 +56,6 @@ class OnnxBackend(ExportBackend):
             help="Explicit input shape as channels height width.",
         )
         parser.add_argument(
-            "--opset",
-            type=int,
-            default=DEFAULT_OPSET,
-            help="ONNX opset version to target.",
-        )
-        parser.add_argument(
             "--dynamic-batch",
             action="store_true",
             help="Mark batch axis as dynamic.",
@@ -76,16 +67,16 @@ class OnnxBackend(ExportBackend):
             help="Device used for model instantiation and tracing.",
         )
         parser.add_argument(
-            "--external-data",
+            "--strict",
             action=argparse.BooleanOptionalAction,
             default=False,
-            help="Save large model weights in external data files.",
+            help="Enable strict graph capture during torch.export.",
         )
         parser.add_argument(
-            "--check",
+            "--verify",
             action=argparse.BooleanOptionalAction,
             default=True,
-            help="Run ONNX checker after export.",
+            help="Load the saved .pt2 archive after export to validate it.",
         )
         parser.add_argument(
             "--exportable",
@@ -115,34 +106,36 @@ class OnnxBackend(ExportBackend):
         model.eval()
 
         example_input = torch.randn(args.batch_size, *input_size, device=device)
-
-        export_kwargs: dict[str, object] = {
-            "f": str(output_path),
-            "opset_version": args.opset,
-            "input_names": ["input"],
-            "output_names": ["output"],
-            "dynamo": True,
-            "fallback": True,
-            "external_data": args.external_data,
-        }
+        dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
         if args.dynamic_batch:
-            export_kwargs["dynamic_shapes"] = ({0: torch.export.Dim("batch")},)
-            export_kwargs["dynamic_axes"] = {"input": {0: "batch"}, "output": {0: "batch"}}
+            dynamic_shapes = ({0: torch.export.Dim("batch")},)
 
         try:
-            torch.onnx.export(model, (example_input,), **export_kwargs)
+            exported_program = torch.export.export(
+                model,
+                (example_input,),
+                dynamic_shapes=dynamic_shapes,
+                strict=args.strict,
+            )
         except Exception as exc:
-            raise ExportError(f"ONNX export failed: {exc}") from exc
+            raise ExportError(f"torch.export capture failed: {exc}") from exc
 
-        if args.check:
+        try:
+            torch.export.save(exported_program, str(output_path))
+        except Exception as exc:
+            raise ExportError(f"Failed to save torch.export archive: {exc}") from exc
+
+        if args.verify:
             try:
-                onnx.checker.check_model(str(output_path))
+                torch.export.load(str(output_path))
             except Exception as exc:
-                raise ExportError(f"Exported model failed ONNX check: {exc}") from exc
+                raise ExportError(f"Saved torch.export archive failed to load: {exc}") from exc
 
         return 0
 
     def _validate_args(self, args: argparse.Namespace) -> None:
         validate_common_args(batch_size=args.batch_size, device=args.device)
-        if args.opset < 7:
-            raise ConfigurationError("--opset must be >= 7.")
+        if args.dynamic_batch and args.batch_size < 2:
+            raise ConfigurationError(
+                "--dynamic-batch requires --batch-size >= 2 for stable symbolic shape capture."
+            )
