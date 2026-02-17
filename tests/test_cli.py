@@ -53,3 +53,27 @@ def test_export_torch_export_arguments_parse() -> None:
     assert args.dynamic_batch is True
     assert args.strict is True
     assert args.verify is False
+
+
+def test_export_coreml_arguments_parse() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "export",
+            "coreml",
+            "resnet18",
+            "--output",
+            "artifacts/model.mlpackage",
+            "--dynamic-batch",
+            "--batch-upper-bound",
+            "16",
+            "--compute-precision",
+            "float16",
+        ]
+    )
+    assert args.command == "export"
+    assert args.format == "coreml"
+    assert args.model_name == "resnet18"
+    assert args.dynamic_batch is True
+    assert args.batch_upper_bound == 16
+    assert args.compute_precision == "float16"
