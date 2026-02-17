@@ -6,6 +6,10 @@ This repository provides `timmx`, an extensible CLI/package for exporting `timm`
 deployment formats. Keep architecture backend-oriented so new formats can be added with minimal
 touch points.
 
+Current built-in backends:
+- `onnx`
+- `torch-export`
+
 ## Non-Negotiable Tooling Rules
 
 - Use `uv` for dependency management, execution, and builds.
@@ -28,6 +32,7 @@ touch points.
 - Export backend interface: `src/timmx/export/base.py`
 - Backend registry: `src/timmx/export/registry.py`
 - Backend implementations: `src/timmx/export/<format>_backend.py`
+- Shared model helpers: `src/timmx/export/common.py`
 - CLI entrypoint: `src/timmx/cli.py`
 - Tests: `tests/`
 
@@ -39,6 +44,9 @@ Every backend must:
 - Return integer exit codes and raise `timmx.errors.TimmxError` subclasses for user-facing failures
 
 The CLI must remain format-agnostic and dispatch through the registry.
+
+Runtime nuance:
+- For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 
 ## Adding a New Export Backend
 
@@ -70,4 +78,3 @@ uv build
 - Keep changes surgical.
 - Avoid speculative abstractions.
 - Add configuration only when a real backend requires it.
-

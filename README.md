@@ -5,6 +5,7 @@ formats.
 
 Current format support:
 - ONNX (`timmx export onnx ...`)
+- torch.export archive (`timmx export torch-export ...`)
 
 ## Requirements
 
@@ -34,6 +35,19 @@ uv run timmx export onnx resnet18 \
   --output ./artifacts/resnet18_finetuned.onnx
 ```
 
+### Export a model with `torch.export` (`.pt2`)
+
+```bash
+uv run timmx export torch-export resnet18 \
+  --pretrained \
+  --dynamic-batch \
+  --batch-size 2 \
+  --output ./artifacts/resnet18.pt2
+```
+
+When using `--dynamic-batch` with `torch-export`, set `--batch-size` to at least `2` so
+PyTorch can capture a symbolic batch dimension.
+
 ## Development Commands
 
 ```bash
@@ -50,4 +64,3 @@ Backends are isolated under `src/timmx/export/`. Add a new backend by implementi
 `ExportBackend` contract and registering it in `create_builtin_registry()`.
 
 Detailed contributor guidance is in `AGENTS.md`.
-
