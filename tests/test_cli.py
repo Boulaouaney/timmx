@@ -77,3 +77,24 @@ def test_export_coreml_arguments_parse() -> None:
     assert args.dynamic_batch is True
     assert args.batch_upper_bound == 16
     assert args.compute_precision == "float16"
+
+
+def test_export_litert_arguments_parse() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "export",
+            "litert",
+            "resnet18",
+            "--output",
+            "artifacts/model.tflite",
+            "--mode",
+            "dynamic-int8",
+            "--nhwc-output",
+        ]
+    )
+    assert args.command == "export"
+    assert args.format == "litert"
+    assert args.model_name == "resnet18"
+    assert args.mode == "dynamic-int8"
+    assert args.nhwc_output is True

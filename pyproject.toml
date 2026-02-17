@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "coremltools>=8.1.0",
+    "litert-torch>=0.8.0",
     "onnx>=1.17.0",
     "onnxscript>=0.1.0",
     "timm>=1.0.20",
