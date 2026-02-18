@@ -124,6 +124,24 @@ uv run timmx export torch-export resnet18 \
 When using `--dynamic-batch` with `torch-export`, set `--batch-size` to at least `2` so
 PyTorch can capture a symbolic batch dimension.
 
+## Roadmap
+
+- [x] ONNX
+- [x] Core ML
+- [x] LiteRT / TFLite
+- [x] torch.export
+- [ ] ExecuTorch (XNNPACK + more delegates TBD)
+- [ ] OpenVINO
+- [ ] TensorRT
+- [ ] TensorFlow (SavedModel / .pb)
+- [ ] TensorFlow.js
+- [ ] TFLite Edge TPU
+- [ ] NCNN
+- [ ] RKNN
+- [ ] MNN
+- [ ] PaddlePaddle
+- [ ] TorchScript (legacy)
+
 ## Development Commands
 
 ```bash
