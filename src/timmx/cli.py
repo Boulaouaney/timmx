@@ -1,64 +1,58 @@
 from __future__ import annotations
 
-import argparse
-import sys
+import functools
 
+import typer
+
+from timmx import __version__
 from timmx.errors import TimmxError
 from timmx.export import BackendRegistry, create_builtin_registry
-from timmx.export.base import ExportBackend
+
+app = typer.Typer(
+    name="timmx", help="Export timm models to deployment formats.", no_args_is_help=True
+)
+export_app = typer.Typer(help="Export a model to a deployment format.", no_args_is_help=True)
+app.add_typer(export_app, name="export")
 
 
-def build_parser(registry: BackendRegistry | None = None) -> argparse.ArgumentParser:
+def _version_callback(value: bool) -> None:
+    if value:
+        print(f"timmx {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    pass
+
+
+def build_export_app(registry: BackendRegistry | None = None) -> None:
     active_registry = registry or create_builtin_registry()
 
-    parser = argparse.ArgumentParser(
-        prog="timmx",
-        description="Export timm models to deployment formats.",
-    )
-    root_subparsers = parser.add_subparsers(dest="command", required=True)
-
-    export_parser = root_subparsers.add_parser(
-        "export",
-        help="Export a model to a deployment format.",
-        description="Export a model to a deployment format.",
-    )
-    export_subparsers = export_parser.add_subparsers(dest="format", required=True)
-
     for name, backend in active_registry.items():
-        _add_backend_parser(export_subparsers, name, backend)
+        command_fn = backend.create_command()
 
-    return parser
+        @functools.wraps(command_fn)
+        def wrapped(*args: object, _fn: object = command_fn, **kwargs: object) -> None:
+            try:
+                _fn(*args, **kwargs)
+            except TimmxError as exc:
+                typer.echo(f"error: {exc}", err=True)
+                raise typer.Exit(code=2) from exc
 
-
-def run(argv: list[str] | None = None, registry: BackendRegistry | None = None) -> int:
-    parser = build_parser(registry=registry)
-    args = parser.parse_args(argv)
-    backend = getattr(args, "_backend", None)
-
-    if backend is None:
-        parser.print_help(sys.stderr)
-        return 2
-
-    try:
-        return backend.run(args)
-    except TimmxError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+        export_app.command(name=name, help=backend.help)(wrapped)
 
 
-def main(argv: list[str] | None = None) -> int:
-    return run(argv)
+build_export_app()
 
 
-def _add_backend_parser(
-    export_subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
-    name: str,
-    backend: ExportBackend,
-) -> None:
-    backend_parser = export_subparsers.add_parser(
-        name,
-        help=backend.help,
-        description=backend.help,
-    )
-    backend.add_arguments(backend_parser)
-    backend_parser.set_defaults(_backend=backend)
+def main() -> None:
+    app()

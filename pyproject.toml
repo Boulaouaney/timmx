@@ -11,6 +11,7 @@ dependencies = [
     "onnxscript>=0.1.0",
     "timm>=1.0.20",
     "torch>=2.6.0",
+    "typer>=0.15.0",
 ]
 
 [project.scripts]

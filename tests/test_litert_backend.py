@@ -1,4 +1,3 @@
-import argparse
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +18,7 @@ class _ConvModel(torch.nn.Module):
         return self.conv(x)
 
 
-def _build_args(
+def _build_kwargs(
     output_path: Path,
     *,
     mode: str = "fp32",
@@ -27,24 +26,24 @@ def _build_args(
     calibration_data: Path | None = None,
     calibration_steps: int | None = None,
     verify: bool = True,
-) -> argparse.Namespace:
-    return argparse.Namespace(
-        model_name="dummy",
-        output=output_path,
-        checkpoint=None,
-        pretrained=False,
-        num_classes=None,
-        in_chans=None,
-        batch_size=2,
-        input_size=[3, 16, 16],
-        device="cpu",
-        mode=mode,
-        calibration_data=calibration_data,
-        calibration_steps=calibration_steps,
-        nhwc_input=nhwc_input,
-        verify=verify,
-        exportable=True,
-    )
+) -> dict:
+    return {
+        "model_name": "dummy",
+        "output": output_path,
+        "checkpoint": None,
+        "pretrained": False,
+        "num_classes": None,
+        "in_chans": None,
+        "batch_size": 2,
+        "input_size": (3, 16, 16),
+        "device": "cpu",
+        "mode": mode,
+        "calibration_data": calibration_data,
+        "calibration_steps": calibration_steps,
+        "nhwc_input": nhwc_input,
+        "verify": verify,
+        "exportable": True,
+    }
 
 
 def _patch_model_helpers(monkeypatch: pytest.MonkeyPatch, model: torch.nn.Module) -> None:
@@ -74,13 +73,13 @@ def test_export_litert_modes_include_expected_tensor_types(
     expected_dtype: type[np.generic],
 ) -> None:
     output_path = tmp_path / f"model_{mode}.tflite"
-    args = _build_args(output_path, mode=mode)
+    kwargs = _build_kwargs(output_path, mode=mode)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = LiteRTBackend()
-    exit_code = backend.run(args)
+    command = backend.create_command()
+    command(**kwargs)
 
-    assert exit_code == 0
     assert output_path.exists()
     interpreter = tfl_interpreter.Interpreter(model_path=str(output_path))
     interpreter.allocate_tensors()
@@ -93,13 +92,13 @@ def test_export_litert_nhwc_input_changes_input_layout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output_path = tmp_path / "model_nhwc.tflite"
-    args = _build_args(output_path, mode="fp32", nhwc_input=True)
+    kwargs = _build_kwargs(output_path, mode="fp32", nhwc_input=True)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = LiteRTBackend()
-    exit_code = backend.run(args)
+    command = backend.create_command()
+    command(**kwargs)
 
-    assert exit_code == 0
     interpreter = tfl_interpreter.Interpreter(model_path=str(output_path))
     runner = interpreter.get_signature_runner("serving_default")
     input_name, input_details = next(iter(runner.get_input_details().items()))
@@ -116,11 +115,12 @@ def test_export_litert_rejects_calibration_args_for_fp32(
     calibration_path = tmp_path / "calibration.pt"
     torch.save(torch.randn(4, 3, 16, 16), calibration_path)
 
-    args = _build_args(output_path, mode="fp32", calibration_data=calibration_path)
+    kwargs = _build_kwargs(output_path, mode="fp32", calibration_data=calibration_path)
 
     backend = LiteRTBackend()
+    command = backend.create_command()
     with pytest.raises(ConfigurationError):
-        backend.run(args)
+        command(**kwargs)
 
 
 def test_export_litert_int8_with_calibration_data_file(
@@ -131,7 +131,7 @@ def test_export_litert_int8_with_calibration_data_file(
     calibration_path = tmp_path / "calibration.pt"
     torch.save(torch.randn(6, 3, 16, 16), calibration_path)
 
-    args = _build_args(
+    kwargs = _build_kwargs(
         output_path,
         mode="int8",
         calibration_data=calibration_path,
@@ -140,7 +140,7 @@ def test_export_litert_int8_with_calibration_data_file(
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = LiteRTBackend()
-    exit_code = backend.run(args)
+    command = backend.create_command()
+    command(**kwargs)
 
-    assert exit_code == 0
     assert output_path.exists()

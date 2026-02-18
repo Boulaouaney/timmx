@@ -41,9 +41,14 @@ Current built-in backends:
 ## Backend Design Contract
 
 Every backend must:
-- Implement `ExportBackend` (`name`, `help`, `add_arguments`, `run`)
-- Own all format-specific CLI flags in its own module
-- Return integer exit codes and raise `timmx.errors.TimmxError` subclasses for user-facing failures
+- Implement `ExportBackend` (`name`, `help`, `create_command`)
+- `create_command()` returns a Typer-compatible function with `Annotated` type parameters
+- Own all format-specific CLI flags (as Typer-annotated params) in its own module
+- Raise `timmx.errors.TimmxError` subclasses for user-facing failures (the CLI wrapper catches these and exits with code 2)
+- Use `typer.Option("--flag-name")` with explicit param_decls for store-true flags (no `--no-` form)
+- Use plain `bool` defaults (no explicit param_decls) for `--flag/--no-flag` toggles
+- Use `StrEnum` types for choices (e.g., `Device`, `LiteRTMode`, `ConvertTo`)
+- Use `tuple[int, int, int] | None` for `--input-size`
 
 The CLI must remain format-agnostic and dispatch through the registry.
 
@@ -58,14 +63,13 @@ Runtime nuance:
 ## Adding a New Export Backend
 
 1. Create `src/timmx/export/<format>_backend.py`.
-2. Implement `ExportBackend` with concise, format-specific CLI options.
+2. Implement `ExportBackend` with `create_command()` returning a Typer-compatible function.
 3. Register the backend in `create_builtin_registry()` in
    `src/timmx/export/registry.py`.
 4. Add tests:
-   - CLI argument parsing coverage
+   - CLI help output coverage (via `typer.testing.CliRunner`)
    - Registry coverage
-   - At least one end-to-end export smoke test (or a targeted unit test when runtime export is
-     impractical)
+   - At least one end-to-end export smoke test calling `backend.create_command()(**kwargs)`
 5. Update `README.md` format support and usage examples.
 
 ## Quality Gates Before Shipping

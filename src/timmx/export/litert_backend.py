@@ -1,185 +1,179 @@
 from __future__ import annotations
 
-import argparse
+from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
+from typing import Annotated
 
 import torch
+import typer
 
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
-from timmx.export.calibration import add_calibration_data_arguments, resolve_calibration_batches
+from timmx.export.calibration import resolve_calibration_batches
 from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
+from timmx.export.types import Device
+
+
+class LiteRTMode(StrEnum):
+    fp32 = "fp32"
+    fp16 = "fp16"
+    dynamic_int8 = "dynamic-int8"
+    int8 = "int8"
 
 
 class LiteRTBackend(ExportBackend):
     name = "litert"
     help = "Export a timm model to LiteRT/TFLite using litert-torch."
 
-    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("model_name", help="timm model name, e.g. resnet18")
-        parser.add_argument(
-            "--output",
-            type=Path,
-            required=True,
-            help="Path to write the LiteRT model (.tflite).",
-        )
-        parser.add_argument(
-            "--checkpoint",
-            type=Path,
-            help="Path to a fine-tuned checkpoint to load into the model.",
-        )
-        parser.add_argument(
-            "--pretrained",
-            action="store_true",
-            help="Load timm pretrained weights.",
-        )
-        parser.add_argument(
-            "--num-classes",
-            type=int,
-            help="Override the model classifier output classes.",
-        )
-        parser.add_argument(
-            "--in-chans",
-            type=int,
-            help="Override model input channels.",
-        )
-        parser.add_argument(
-            "--batch-size",
-            type=int,
-            default=1,
-            help="Example input batch size for export and calibration.",
-        )
-        parser.add_argument(
-            "--input-size",
-            type=int,
-            nargs=3,
-            metavar=("C", "H", "W"),
-            help="Explicit input shape as channels height width.",
-        )
-        parser.add_argument(
-            "--device",
-            choices=("cpu", "cuda"),
-            default="cpu",
-            help="Device used for model instantiation and tracing.",
-        )
-        parser.add_argument(
-            "--mode",
-            choices=("fp32", "fp16", "dynamic-int8", "int8"),
-            default="fp32",
-            help="Export precision / quantization mode.",
-        )
-        add_calibration_data_arguments(parser)
-        parser.add_argument(
-            "--nhwc-input",
-            action=argparse.BooleanOptionalAction,
-            default=False,
-            help="Expose the first model input as NHWC instead of NCHW.",
-        )
-        parser.add_argument(
-            "--verify",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Load and allocate the exported TFLite model.",
-        )
-        parser.add_argument(
-            "--exportable",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Use timm export-friendly layer variants when available.",
-        )
+    def create_command(self) -> Callable[..., None]:
+        def command(
+            model_name: Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")],
+            output: Annotated[Path, typer.Option(help="Path to write the LiteRT model (.tflite).")],
+            checkpoint: Annotated[
+                Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")
+            ] = None,
+            pretrained: Annotated[
+                bool, typer.Option("--pretrained", help="Load timm pretrained weights.")
+            ] = False,
+            num_classes: Annotated[
+                int | None, typer.Option(help="Override the model classifier output classes.")
+            ] = None,
+            in_chans: Annotated[
+                int | None, typer.Option(help="Override model input channels.")
+            ] = None,
+            batch_size: Annotated[
+                int, typer.Option(help="Example input batch size for export and calibration.")
+            ] = 2,
+            input_size: Annotated[
+                tuple[int, int, int] | None,
+                typer.Option(help="Explicit input shape as C H W."),
+            ] = None,
+            device: Annotated[
+                Device, typer.Option(help="Device used for model instantiation and tracing.")
+            ] = Device.cpu,
+            mode: Annotated[
+                LiteRTMode, typer.Option(help="Export precision / quantization mode.")
+            ] = LiteRTMode.fp32,
+            calibration_data: Annotated[
+                Path | None,
+                typer.Option(
+                    help=(
+                        "Path to a torch-saved calibration tensor with shape (N, C, H, W). "
+                        "Used by quantized export modes."
+                    )
+                ),
+            ] = None,
+            calibration_steps: Annotated[
+                int | None,
+                typer.Option(
+                    help=(
+                        "Number of calibration batches to consume. "
+                        "Default is 1 random batch when --calibration-data is not set, "
+                        "or all full batches from --calibration-data when set."
+                    )
+                ),
+            ] = None,
+            nhwc_input: Annotated[
+                bool,
+                typer.Option(help="Expose the first model input as NHWC instead of NCHW."),
+            ] = False,
+            verify: Annotated[
+                bool, typer.Option(help="Load and allocate the exported TFLite model.")
+            ] = True,
+            exportable: Annotated[
+                bool,
+                typer.Option(help="Use timm export-friendly layer variants when available."),
+            ] = True,
+        ) -> None:
+            validate_common_args(batch_size=batch_size, device=device)
+            int8_modes = {LiteRTMode.dynamic_int8, LiteRTMode.int8}
 
-    def run(self, args: argparse.Namespace) -> int:
-        self._validate_args(args)
+            if mode in int8_modes and device != Device.cpu:
+                raise ConfigurationError(
+                    "LiteRT int8 modes currently require --device cpu for PT2E quantization."
+                )
+            if mode not in int8_modes and (
+                calibration_data is not None or calibration_steps is not None
+            ):
+                raise ConfigurationError(
+                    "--calibration-data and --calibration-steps are only valid with "
+                    "--mode dynamic-int8 or --mode int8."
+                )
 
-        litert_torch = _import_litert_torch()
+            litert_torch = _import_litert_torch()
 
-        output_path = Path(args.output).expanduser().resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path = Path(output).expanduser().resolve()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        model = create_timm_model(
-            args.model_name,
-            pretrained=args.pretrained,
-            checkpoint=args.checkpoint,
-            num_classes=args.num_classes,
-            in_chans=args.in_chans,
-            exportable=args.exportable,
-        )
-        input_size = resolve_input_size(model, args.input_size)
-
-        device = torch.device(args.device)
-        model = model.to(device)
-        model.eval()
-
-        convert_module: torch.nn.Module = model
-        quant_config = None
-        converter_flags: dict[str, object] = {}
-        example_input: torch.Tensor
-
-        if args.mode == "fp16":
-            example_input = torch.randn(args.batch_size, *input_size, device=device)
-            tensorflow = _import_tensorflow()
-            converter_flags = {
-                "optimizations": [tensorflow.lite.Optimize.DEFAULT],
-                "target_spec": {"supported_types": [tensorflow.float16]},
-            }
-        elif args.mode in {"dynamic-int8", "int8"}:
-            calibration_batches = resolve_calibration_batches(
-                calibration_data=args.calibration_data,
-                calibration_steps=args.calibration_steps,
-                batch_size=args.batch_size,
-                input_size=input_size,
-                device=device,
+            model = create_timm_model(
+                model_name,
+                pretrained=pretrained,
+                checkpoint=checkpoint,
+                num_classes=num_classes,
+                in_chans=in_chans,
+                exportable=exportable,
             )
-            example_input = calibration_batches[0]
-            convert_module, quant_config = _prepare_pt2e_quantized_module(
-                model,
-                example_input,
-                calibration_batches=calibration_batches,
-                is_dynamic=(args.mode == "dynamic-int8"),
-            )
-        else:
-            example_input = torch.randn(args.batch_size, *input_size, device=device)
+            resolved_input_size = resolve_input_size(model, input_size)
 
-        if args.nhwc_input:
-            _validate_nhwc_input_compatibility(example_input)
-            convert_module = litert_torch.to_channel_last_io(convert_module, args=[0])
-            example_input = _to_nhwc_input(example_input)
+            torch_device = torch.device(device)
+            model = model.to(torch_device)
+            model.eval()
 
-        try:
-            edge_model = litert_torch.convert(
-                convert_module,
-                (example_input,),
-                quant_config=quant_config,
-                _ai_edge_converter_flags=converter_flags,
-            )
-        except Exception as exc:
-            raise ExportError(f"LiteRT conversion failed: {exc}") from exc
+            convert_module: torch.nn.Module = model
+            quant_config = None
+            converter_flags: dict[str, object] = {}
+            example_input: torch.Tensor
 
-        try:
-            edge_model.export(str(output_path))
-        except Exception as exc:
-            raise ExportError(f"Failed to save LiteRT model: {exc}") from exc
+            if mode == LiteRTMode.fp16:
+                example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
+                tensorflow = _import_tensorflow()
+                converter_flags = {
+                    "optimizations": [tensorflow.lite.Optimize.DEFAULT],
+                    "target_spec": {"supported_types": [tensorflow.float16]},
+                }
+            elif mode in {LiteRTMode.dynamic_int8, LiteRTMode.int8}:
+                calibration_batches = resolve_calibration_batches(
+                    calibration_data=calibration_data,
+                    calibration_steps=calibration_steps,
+                    batch_size=batch_size,
+                    input_size=resolved_input_size,
+                    device=torch_device,
+                )
+                example_input = calibration_batches[0]
+                convert_module, quant_config = _prepare_pt2e_quantized_module(
+                    model,
+                    example_input,
+                    calibration_batches=calibration_batches,
+                    is_dynamic=(mode == LiteRTMode.dynamic_int8),
+                )
+            else:
+                example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
 
-        if args.verify:
-            _verify_tflite_model(output_path)
+            if nhwc_input:
+                _validate_nhwc_input_compatibility(example_input)
+                convert_module = litert_torch.to_channel_last_io(convert_module, args=[0])
+                example_input = _to_nhwc_input(example_input)
 
-        return 0
+            try:
+                edge_model = litert_torch.convert(
+                    convert_module,
+                    (example_input,),
+                    quant_config=quant_config,
+                    _ai_edge_converter_flags=converter_flags,
+                )
+            except Exception as exc:
+                raise ExportError(f"LiteRT conversion failed: {exc}") from exc
 
-    def _validate_args(self, args: argparse.Namespace) -> None:
-        validate_common_args(batch_size=args.batch_size, device=args.device)
-        int8_modes = {"dynamic-int8", "int8"}
+            try:
+                edge_model.export(str(output_path))
+            except Exception as exc:
+                raise ExportError(f"Failed to save LiteRT model: {exc}") from exc
 
-        if args.mode in int8_modes and args.device != "cpu":
-            raise ConfigurationError(
-                "LiteRT int8 modes currently require --device cpu for PT2E quantization."
-            )
-        if args.mode not in int8_modes and (
-            args.calibration_data is not None or args.calibration_steps is not None
-        ):
-            raise ConfigurationError(
-                "--calibration-data and --calibration-steps are only valid with "
-                "--mode dynamic-int8 or --mode int8."
-            )
+            if verify:
+                _verify_tflite_model(output_path)
+
+        return command
 
 
 def _prepare_pt2e_quantized_module(
@@ -232,7 +226,8 @@ def _verify_tflite_model(output_path: Path) -> None:
         from ai_edge_litert import interpreter as tfl_interpreter
     except ImportError as exc:
         raise ExportError(
-            "ai-edge-litert is required to verify LiteRT export. Install dependencies with `uv sync`."
+            "ai-edge-litert is required to verify LiteRT export. "
+            "Install dependencies with `uv sync`."
         ) from exc
 
     try:
@@ -257,6 +252,7 @@ def _import_tensorflow() -> object:
         import tensorflow
     except ImportError as exc:
         raise ExportError(
-            "TensorFlow is required for LiteRT fp16 conversion flags. Install dependencies with `uv sync`."
+            "TensorFlow is required for LiteRT fp16 conversion flags. "
+            "Install dependencies with `uv sync`."
         ) from exc
     return tensorflow

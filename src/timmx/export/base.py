@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import argparse
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 
 class ExportBackend(ABC):
@@ -11,9 +11,5 @@ class ExportBackend(ABC):
     help: str
 
     @abstractmethod
-    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        """Register backend-specific CLI arguments."""
-
-    @abstractmethod
-    def run(self, args: argparse.Namespace) -> int:
-        """Execute the export and return a process exit code."""
+    def create_command(self) -> Callable[..., None]:
+        """Return a Typer-compatible command function."""

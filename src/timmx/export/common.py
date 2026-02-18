@@ -45,10 +45,10 @@ def create_timm_model(
 
 def resolve_input_size(
     model: torch.nn.Module,
-    requested: list[int] | None,
+    requested: tuple[int, int, int] | None,
 ) -> tuple[int, int, int]:
     if requested is not None:
-        return int(requested[0]), int(requested[1]), int(requested[2])
+        return requested
 
     config = resolve_data_config({}, model=model)
     raw_input_size = config.get("input_size")

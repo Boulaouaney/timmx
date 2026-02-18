@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import argparse
+from collections.abc import Callable
 from pathlib import Path
+from typing import Annotated
 
 import onnx
 import torch
+import typer
 
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
 from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
+from timmx.export.types import Device
 
 DEFAULT_OPSET = 18
 
@@ -17,132 +20,92 @@ class OnnxBackend(ExportBackend):
     name = "onnx"
     help = "Export a timm model to ONNX."
 
-    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("model_name", help="timm model name, e.g. resnet18")
-        parser.add_argument(
-            "--output",
-            type=Path,
-            required=True,
-            help="Path to write the ONNX model.",
-        )
-        parser.add_argument(
-            "--checkpoint",
-            type=Path,
-            help="Path to a fine-tuned checkpoint to load into the model.",
-        )
-        parser.add_argument(
-            "--pretrained",
-            action="store_true",
-            help="Load timm pretrained weights.",
-        )
-        parser.add_argument(
-            "--num-classes",
-            type=int,
-            help="Override the model classifier output classes.",
-        )
-        parser.add_argument(
-            "--in-chans",
-            type=int,
-            help="Override model input channels.",
-        )
-        parser.add_argument(
-            "--batch-size",
-            type=int,
-            default=1,
-            help="Example input batch size for export.",
-        )
-        parser.add_argument(
-            "--input-size",
-            type=int,
-            nargs=3,
-            metavar=("C", "H", "W"),
-            help="Explicit input shape as channels height width.",
-        )
-        parser.add_argument(
-            "--opset",
-            type=int,
-            default=DEFAULT_OPSET,
-            help="ONNX opset version to target.",
-        )
-        parser.add_argument(
-            "--dynamic-batch",
-            action="store_true",
-            help="Mark batch axis as dynamic.",
-        )
-        parser.add_argument(
-            "--device",
-            choices=("cpu", "cuda"),
-            default="cpu",
-            help="Device used for model instantiation and tracing.",
-        )
-        parser.add_argument(
-            "--external-data",
-            action=argparse.BooleanOptionalAction,
-            default=False,
-            help="Save large model weights in external data files.",
-        )
-        parser.add_argument(
-            "--check",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Run ONNX checker after export.",
-        )
-        parser.add_argument(
-            "--exportable",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Use timm export-friendly layer variants when available.",
-        )
+    def create_command(self) -> Callable[..., None]:
+        def command(
+            model_name: Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")],
+            output: Annotated[Path, typer.Option(help="Path to write the ONNX model.")],
+            checkpoint: Annotated[
+                Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")
+            ] = None,
+            pretrained: Annotated[
+                bool, typer.Option("--pretrained", help="Load timm pretrained weights.")
+            ] = False,
+            num_classes: Annotated[
+                int | None, typer.Option(help="Override the model classifier output classes.")
+            ] = None,
+            in_chans: Annotated[
+                int | None, typer.Option(help="Override model input channels.")
+            ] = None,
+            batch_size: Annotated[
+                int, typer.Option(help="Example input batch size for export.")
+            ] = 1,
+            input_size: Annotated[
+                tuple[int, int, int] | None,
+                typer.Option(help="Explicit input shape as C H W."),
+            ] = None,
+            opset: Annotated[
+                int, typer.Option(help="ONNX opset version to target.")
+            ] = DEFAULT_OPSET,
+            dynamic_batch: Annotated[
+                bool, typer.Option("--dynamic-batch", help="Mark batch axis as dynamic.")
+            ] = False,
+            device: Annotated[
+                Device, typer.Option(help="Device used for model instantiation and tracing.")
+            ] = Device.cpu,
+            external_data: Annotated[
+                bool, typer.Option(help="Save large model weights in external data files.")
+            ] = False,
+            check: Annotated[bool, typer.Option(help="Run ONNX checker after export.")] = True,
+            exportable: Annotated[
+                bool,
+                typer.Option(help="Use timm export-friendly layer variants when available."),
+            ] = True,
+        ) -> None:
+            validate_common_args(batch_size=batch_size, device=device)
+            if opset < 7:
+                raise ConfigurationError("--opset must be >= 7.")
 
-    def run(self, args: argparse.Namespace) -> int:
-        self._validate_args(args)
+            output_path = Path(output).expanduser().resolve()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        output_path = Path(args.output).expanduser().resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+            model = create_timm_model(
+                model_name,
+                pretrained=pretrained,
+                checkpoint=checkpoint,
+                num_classes=num_classes,
+                in_chans=in_chans,
+                exportable=exportable,
+            )
+            resolved_input_size = resolve_input_size(model, input_size)
 
-        model = create_timm_model(
-            args.model_name,
-            pretrained=args.pretrained,
-            checkpoint=args.checkpoint,
-            num_classes=args.num_classes,
-            in_chans=args.in_chans,
-            exportable=args.exportable,
-        )
-        input_size = resolve_input_size(model, args.input_size)
+            torch_device = torch.device(device)
+            model = model.to(torch_device)
+            model.eval()
 
-        device = torch.device(args.device)
-        model = model.to(device)
-        model.eval()
+            example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
 
-        example_input = torch.randn(args.batch_size, *input_size, device=device)
+            export_kwargs: dict[str, object] = {
+                "f": str(output_path),
+                "opset_version": opset,
+                "input_names": ["input"],
+                "output_names": ["output"],
+                "dynamo": True,
+                "fallback": True,
+                "external_data": external_data,
+            }
+            if dynamic_batch:
+                export_kwargs["dynamic_shapes"] = ({0: torch.export.Dim("batch")},)
+                export_kwargs["dynamic_axes"] = {"input": {0: "batch"}, "output": {0: "batch"}}
 
-        export_kwargs: dict[str, object] = {
-            "f": str(output_path),
-            "opset_version": args.opset,
-            "input_names": ["input"],
-            "output_names": ["output"],
-            "dynamo": True,
-            "fallback": True,
-            "external_data": args.external_data,
-        }
-        if args.dynamic_batch:
-            export_kwargs["dynamic_shapes"] = ({0: torch.export.Dim("batch")},)
-            export_kwargs["dynamic_axes"] = {"input": {0: "batch"}, "output": {0: "batch"}}
-
-        try:
-            torch.onnx.export(model, (example_input,), **export_kwargs)
-        except Exception as exc:
-            raise ExportError(f"ONNX export failed: {exc}") from exc
-
-        if args.check:
             try:
-                onnx.checker.check_model(str(output_path))
+                torch.onnx.export(model, (example_input,), **export_kwargs)
             except Exception as exc:
-                raise ExportError(f"Exported model failed ONNX check: {exc}") from exc
+                raise ExportError(f"ONNX export failed: {exc}") from exc
 
-        return 0
+            if check:
+                try:
+                    onnx.checker.check_model(str(output_path))
+                except Exception as exc:
+                    raise ExportError(f"Exported model failed ONNX check: {exc}") from exc
 
-    def _validate_args(self, args: argparse.Namespace) -> None:
-        validate_common_args(batch_size=args.batch_size, device=args.device)
-        if args.opset < 7:
-            raise ConfigurationError("--opset must be >= 7.")
+        return command

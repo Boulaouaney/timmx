@@ -1,31 +1,10 @@
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import torch
 
 from timmx.errors import ConfigurationError, ExportError
-
-
-def add_calibration_data_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--calibration-data",
-        type=Path,
-        help=(
-            "Path to a torch-saved calibration tensor with shape (N, C, H, W). "
-            "Used by quantized export modes."
-        ),
-    )
-    parser.add_argument(
-        "--calibration-steps",
-        type=int,
-        help=(
-            "Number of calibration batches to consume. "
-            "Default is 1 random batch when --calibration-data is not set, "
-            "or all full batches from --calibration-data when set."
-        ),
-    )
 
 
 def resolve_calibration_batches(

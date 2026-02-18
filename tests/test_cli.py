@@ -1,106 +1,61 @@
-import pytest
+from typer.testing import CliRunner
 
-from timmx.cli import build_parser
+from timmx.cli import app
 
-
-def test_root_help_mentions_export(capsys: pytest.CaptureFixture[str]) -> None:
-    parser = build_parser()
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["--help"])
-
-    assert exc_info.value.code == 0
-    captured = capsys.readouterr()
-    assert "export" in captured.out
+runner = CliRunner()
 
 
-def test_export_onnx_arguments_parse() -> None:
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "export",
-            "onnx",
-            "resnet18",
-            "--output",
-            "artifacts/model.onnx",
-            "--no-check",
-            "--dynamic-batch",
-        ]
-    )
-    assert args.command == "export"
-    assert args.format == "onnx"
-    assert args.model_name == "resnet18"
-    assert args.check is False
-    assert args.dynamic_batch is True
+def test_root_help_mentions_export() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "export" in result.output
 
 
-def test_export_torch_export_arguments_parse() -> None:
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "export",
-            "torch-export",
-            "resnet18",
-            "--output",
-            "artifacts/model.pt2",
-            "--dynamic-batch",
-            "--strict",
-            "--no-verify",
-        ]
-    )
-    assert args.command == "export"
-    assert args.format == "torch-export"
-    assert args.model_name == "resnet18"
-    assert args.dynamic_batch is True
-    assert args.strict is True
-    assert args.verify is False
+def test_version_flag() -> None:
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert "timmx" in result.output
 
 
-def test_export_coreml_arguments_parse() -> None:
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "export",
-            "coreml",
-            "resnet18",
-            "--output",
-            "artifacts/model.mlpackage",
-            "--dynamic-batch",
-            "--batch-upper-bound",
-            "16",
-            "--compute-precision",
-            "float16",
-        ]
-    )
-    assert args.command == "export"
-    assert args.format == "coreml"
-    assert args.model_name == "resnet18"
-    assert args.dynamic_batch is True
-    assert args.batch_upper_bound == 16
-    assert args.compute_precision == "float16"
+def test_export_help_lists_backends() -> None:
+    result = runner.invoke(app, ["export", "--help"])
+    assert result.exit_code == 0
+    assert "onnx" in result.output
+    assert "coreml" in result.output
+    assert "litert" in result.output
+    assert "torch-export" in result.output
 
 
-def test_export_litert_arguments_parse() -> None:
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "export",
-            "litert",
-            "resnet18",
-            "--output",
-            "artifacts/model.tflite",
-            "--mode",
-            "dynamic-int8",
-            "--calibration-data",
-            "calibration.pt",
-            "--calibration-steps",
-            "4",
-            "--nhwc-input",
-        ]
-    )
-    assert args.command == "export"
-    assert args.format == "litert"
-    assert args.model_name == "resnet18"
-    assert args.mode == "dynamic-int8"
-    assert args.calibration_data.name == "calibration.pt"
-    assert args.calibration_steps == 4
-    assert args.nhwc_input is True
+def test_export_onnx_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "onnx", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--opset" in result.output
+    assert "--dynamic-batch" in result.output
+    assert "--check" in result.output
+
+
+def test_export_coreml_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "coreml", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--convert-to" in result.output
+    assert "compute-preci" in result.output
+    assert "--dynamic-batch" in result.output
+
+
+def test_export_litert_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "litert", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--mode" in result.output
+    assert "calibration-da" in result.output
+    assert "--nhwc-input" in result.output
+
+
+def test_export_torch_export_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "torch-export", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--dynamic-batch" in result.output
+    assert "--strict" in result.output

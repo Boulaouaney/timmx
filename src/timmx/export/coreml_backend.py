@@ -1,183 +1,182 @@
 from __future__ import annotations
 
-import argparse
+from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
+from typing import Annotated
 
 import torch
+import typer
 
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
 from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
+from timmx.export.types import Device
+
+
+class ConvertTo(StrEnum):
+    mlprogram = "mlprogram"
+    neuralnetwork = "neuralnetwork"
+
+
+class ComputePrecision(StrEnum):
+    float16 = "float16"
+    float32 = "float32"
 
 
 class CoreMLBackend(ExportBackend):
     name = "coreml"
     help = "Export a timm model to Core ML."
 
-    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("model_name", help="timm model name, e.g. resnet18")
-        parser.add_argument(
-            "--output",
-            type=Path,
-            required=True,
-            help="Path to write the Core ML model (.mlpackage or .mlmodel).",
-        )
-        parser.add_argument(
-            "--checkpoint",
-            type=Path,
-            help="Path to a fine-tuned checkpoint to load into the model.",
-        )
-        parser.add_argument(
-            "--pretrained",
-            action="store_true",
-            help="Load timm pretrained weights.",
-        )
-        parser.add_argument(
-            "--num-classes",
-            type=int,
-            help="Override the model classifier output classes.",
-        )
-        parser.add_argument(
-            "--in-chans",
-            type=int,
-            help="Override model input channels.",
-        )
-        parser.add_argument(
-            "--batch-size",
-            type=int,
-            default=1,
-            help="Example input batch size for export.",
-        )
-        parser.add_argument(
-            "--input-size",
-            type=int,
-            nargs=3,
-            metavar=("C", "H", "W"),
-            help="Explicit input shape as channels height width.",
-        )
-        parser.add_argument(
-            "--dynamic-batch",
-            action="store_true",
-            help="Export with flexible Core ML batch dimension.",
-        )
-        parser.add_argument(
-            "--batch-upper-bound",
-            type=int,
-            default=8,
-            help="Upper bound used for flexible batch when --dynamic-batch is enabled.",
-        )
-        parser.add_argument(
-            "--device",
-            choices=("cpu", "cuda"),
-            default="cpu",
-            help="Device used for model instantiation and tracing.",
-        )
-        parser.add_argument(
-            "--convert-to",
-            choices=("mlprogram", "neuralnetwork"),
-            default="mlprogram",
-            help="Core ML model type to generate.",
-        )
-        parser.add_argument(
-            "--compute-precision",
-            choices=("float16", "float32"),
-            help="Precision for mlprogram conversion.",
-        )
-        parser.add_argument(
-            "--verify",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Reload the saved Core ML model metadata after export.",
-        )
-        parser.add_argument(
-            "--exportable",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Use timm export-friendly layer variants when available.",
-        )
+    def create_command(self) -> Callable[..., None]:
+        def command(
+            model_name: Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")],
+            output: Annotated[
+                Path, typer.Option(help="Path to write the Core ML model (.mlpackage or .mlmodel).")
+            ],
+            checkpoint: Annotated[
+                Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")
+            ] = None,
+            pretrained: Annotated[
+                bool, typer.Option("--pretrained", help="Load timm pretrained weights.")
+            ] = False,
+            num_classes: Annotated[
+                int | None, typer.Option(help="Override the model classifier output classes.")
+            ] = None,
+            in_chans: Annotated[
+                int | None, typer.Option(help="Override model input channels.")
+            ] = None,
+            batch_size: Annotated[
+                int, typer.Option(help="Example input batch size for export.")
+            ] = 1,
+            input_size: Annotated[
+                tuple[int, int, int] | None,
+                typer.Option(help="Explicit input shape as C H W."),
+            ] = None,
+            dynamic_batch: Annotated[
+                bool,
+                typer.Option(
+                    "--dynamic-batch", help="Export with flexible Core ML batch dimension."
+                ),
+            ] = False,
+            batch_upper_bound: Annotated[
+                int,
+                typer.Option(
+                    help="Upper bound used for flexible batch when --dynamic-batch is enabled."
+                ),
+            ] = 8,
+            device: Annotated[
+                Device, typer.Option(help="Device used for model instantiation and tracing.")
+            ] = Device.cpu,
+            convert_to: Annotated[
+                ConvertTo, typer.Option(help="Core ML model type to generate.")
+            ] = ConvertTo.mlprogram,
+            compute_precision: Annotated[
+                ComputePrecision | None,
+                typer.Option(help="Precision for mlprogram conversion."),
+            ] = None,
+            verify: Annotated[
+                bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
+            ] = True,
+            exportable: Annotated[
+                bool,
+                typer.Option(help="Use timm export-friendly layer variants when available."),
+            ] = True,
+        ) -> None:
+            validate_common_args(batch_size=batch_size, device=device)
+            if dynamic_batch:
+                if batch_upper_bound < 1:
+                    raise ConfigurationError("--batch-upper-bound must be >= 1.")
+                if batch_upper_bound < batch_size:
+                    raise ConfigurationError("--batch-upper-bound must be >= --batch-size.")
+            if convert_to == ConvertTo.neuralnetwork and compute_precision is not None:
+                raise ConfigurationError(
+                    "--compute-precision is only supported when --convert-to mlprogram."
+                )
 
-    def run(self, args: argparse.Namespace) -> int:
-        self._validate_args(args)
-        ct = _import_coremltools()
+            ct = _import_coremltools()
 
-        output_path = Path(args.output).expanduser().resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path = Path(output).expanduser().resolve()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        model = create_timm_model(
-            args.model_name,
-            pretrained=args.pretrained,
-            checkpoint=args.checkpoint,
-            num_classes=args.num_classes,
-            in_chans=args.in_chans,
-            exportable=args.exportable,
-        )
-        input_size = resolve_input_size(model, args.input_size)
-
-        device = torch.device(args.device)
-        model = model.to(device)
-        model.eval()
-
-        example_input = torch.randn(args.batch_size, *input_size, device=device)
-        with torch.no_grad():
-            try:
-                traced_model = torch.jit.trace(model, example_input)
-            except Exception as exc:
-                raise ExportError(f"TorchScript trace failed: {exc}") from exc
-
-        input_type = ct.TensorType(
-            name="input", shape=self._build_input_shape(args, input_size, ct)
-        )
-        convert_kwargs: dict[str, object] = {
-            "source": "pytorch",
-            "inputs": [input_type],
-            "convert_to": args.convert_to,
-        }
-        if args.compute_precision is not None:
-            convert_kwargs["compute_precision"] = _map_compute_precision(args.compute_precision, ct)
-
-        try:
-            coreml_model = ct.convert(traced_model, **convert_kwargs)
-        except Exception as exc:
-            raise ExportError(f"Core ML conversion failed: {exc}") from exc
-
-        try:
-            coreml_model.save(str(output_path))
-        except Exception as exc:
-            raise ExportError(f"Failed to save Core ML model: {exc}") from exc
-
-        if args.verify:
-            try:
-                ct.models.MLModel(str(output_path), skip_model_load=True)
-            except Exception as exc:
-                raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
-
-        return 0
-
-    def _validate_args(self, args: argparse.Namespace) -> None:
-        validate_common_args(batch_size=args.batch_size, device=args.device)
-        if args.dynamic_batch:
-            if args.batch_upper_bound < 1:
-                raise ConfigurationError("--batch-upper-bound must be >= 1.")
-            if args.batch_upper_bound < args.batch_size:
-                raise ConfigurationError("--batch-upper-bound must be >= --batch-size.")
-        if args.convert_to == "neuralnetwork" and args.compute_precision is not None:
-            raise ConfigurationError(
-                "--compute-precision is only supported when --convert-to mlprogram."
+            model = create_timm_model(
+                model_name,
+                pretrained=pretrained,
+                checkpoint=checkpoint,
+                num_classes=num_classes,
+                in_chans=in_chans,
+                exportable=exportable,
             )
+            resolved_input_size = resolve_input_size(model, input_size)
 
-    def _build_input_shape(
-        self, args: argparse.Namespace, input_size: tuple[int, int, int], ct: object
-    ) -> tuple[object, int, int, int] | tuple[int, int, int, int]:
-        if not args.dynamic_batch:
-            return (args.batch_size, *input_size)
+            torch_device = torch.device(device)
+            model = model.to(torch_device)
+            model.eval()
 
-        batch_dim = ct.RangeDim(
-            lower_bound=1,
-            upper_bound=args.batch_upper_bound,
-            default=args.batch_size,
-            symbol="batch",
-        )
-        return (batch_dim, *input_size)
+            example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
+            with torch.no_grad():
+                try:
+                    traced_model = torch.jit.trace(model, example_input)
+                except Exception as exc:
+                    raise ExportError(f"TorchScript trace failed: {exc}") from exc
+
+            input_type = ct.TensorType(
+                name="input",
+                shape=_build_input_shape(
+                    batch_size=batch_size,
+                    dynamic_batch=dynamic_batch,
+                    batch_upper_bound=batch_upper_bound,
+                    input_size=resolved_input_size,
+                    ct=ct,
+                ),
+            )
+            convert_kwargs: dict[str, object] = {
+                "source": "pytorch",
+                "inputs": [input_type],
+                "convert_to": str(convert_to),
+            }
+            if compute_precision is not None:
+                convert_kwargs["compute_precision"] = _map_compute_precision(
+                    str(compute_precision), ct
+                )
+
+            try:
+                coreml_model = ct.convert(traced_model, **convert_kwargs)
+            except Exception as exc:
+                raise ExportError(f"Core ML conversion failed: {exc}") from exc
+
+            try:
+                coreml_model.save(str(output_path))
+            except Exception as exc:
+                raise ExportError(f"Failed to save Core ML model: {exc}") from exc
+
+            if verify:
+                try:
+                    ct.models.MLModel(str(output_path), skip_model_load=True)
+                except Exception as exc:
+                    raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
+
+        return command
+
+
+def _build_input_shape(
+    *,
+    batch_size: int,
+    dynamic_batch: bool,
+    batch_upper_bound: int,
+    input_size: tuple[int, int, int],
+    ct: object,
+) -> tuple[object, int, int, int] | tuple[int, int, int, int]:
+    if not dynamic_batch:
+        return (batch_size, *input_size)
+
+    batch_dim = ct.RangeDim(
+        lower_bound=1,
+        upper_bound=batch_upper_bound,
+        default=batch_size,
+        symbol="batch",
+    )
+    return (batch_dim, *input_size)
 
 
 def _map_compute_precision(value: str, ct: object) -> object:
