@@ -7,6 +7,7 @@ import torch
 
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
+from timmx.export.calibration import add_calibration_data_arguments, resolve_calibration_batches
 from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
 
 
@@ -67,11 +68,12 @@ class LiteRTBackend(ExportBackend):
             default="fp32",
             help="Export precision / quantization mode.",
         )
+        add_calibration_data_arguments(parser)
         parser.add_argument(
-            "--nhwc-output",
+            "--nhwc-input",
             action=argparse.BooleanOptionalAction,
             default=False,
-            help="Transpose the first model output from NCHW to NHWC.",
+            help="Expose the first model input as NHWC instead of NCHW.",
         )
         parser.add_argument(
             "--verify",
@@ -107,28 +109,41 @@ class LiteRTBackend(ExportBackend):
         device = torch.device(args.device)
         model = model.to(device)
         model.eval()
-        example_input = torch.randn(args.batch_size, *input_size, device=device)
 
         convert_module: torch.nn.Module = model
         quant_config = None
         converter_flags: dict[str, object] = {}
+        example_input: torch.Tensor
 
         if args.mode == "fp16":
+            example_input = torch.randn(args.batch_size, *input_size, device=device)
             tensorflow = _import_tensorflow()
             converter_flags = {
                 "optimizations": [tensorflow.lite.Optimize.DEFAULT],
                 "target_spec": {"supported_types": [tensorflow.float16]},
             }
         elif args.mode in {"dynamic-int8", "int8"}:
+            calibration_batches = resolve_calibration_batches(
+                calibration_data=args.calibration_data,
+                calibration_steps=args.calibration_steps,
+                batch_size=args.batch_size,
+                input_size=input_size,
+                device=device,
+            )
+            example_input = calibration_batches[0]
             convert_module, quant_config = _prepare_pt2e_quantized_module(
                 model,
                 example_input,
+                calibration_batches=calibration_batches,
                 is_dynamic=(args.mode == "dynamic-int8"),
             )
+        else:
+            example_input = torch.randn(args.batch_size, *input_size, device=device)
 
-        if args.nhwc_output:
-            _validate_nhwc_output_compatibility(convert_module, example_input)
-            convert_module = litert_torch.to_channel_last_io(convert_module, outputs=[0])
+        if args.nhwc_input:
+            _validate_nhwc_input_compatibility(example_input)
+            convert_module = litert_torch.to_channel_last_io(convert_module, args=[0])
+            example_input = _to_nhwc_input(example_input)
 
         try:
             edge_model = litert_torch.convert(
@@ -152,14 +167,27 @@ class LiteRTBackend(ExportBackend):
 
     def _validate_args(self, args: argparse.Namespace) -> None:
         validate_common_args(batch_size=args.batch_size, device=args.device)
-        if args.mode in {"dynamic-int8", "int8"} and args.device != "cpu":
+        int8_modes = {"dynamic-int8", "int8"}
+
+        if args.mode in int8_modes and args.device != "cpu":
             raise ConfigurationError(
                 "LiteRT int8 modes currently require --device cpu for PT2E quantization."
+            )
+        if args.mode not in int8_modes and (
+            args.calibration_data is not None or args.calibration_steps is not None
+        ):
+            raise ConfigurationError(
+                "--calibration-data and --calibration-steps are only valid with "
+                "--mode dynamic-int8 or --mode int8."
             )
 
 
 def _prepare_pt2e_quantized_module(
-    model: torch.nn.Module, example_input: torch.Tensor, *, is_dynamic: bool
+    model: torch.nn.Module,
+    example_input: torch.Tensor,
+    *,
+    calibration_batches: list[torch.Tensor],
+    is_dynamic: bool,
 ) -> tuple[torch.nn.Module, object]:
     from litert_torch.quantize import pt2e_quantizer, quant_config
     from torchao.quantization.pt2e import quantize_pt2e
@@ -176,7 +204,8 @@ def _prepare_pt2e_quantized_module(
         prepared_module = quantize_pt2e.prepare_pt2e(exported_module, quantizer)
 
         with torch.no_grad():
-            prepared_module(example_input)
+            for calibration_batch in calibration_batches:
+                prepared_module(calibration_batch)
 
         quantized_module = quantize_pt2e.convert_pt2e(prepared_module, fold_quantize=False)
     except Exception as exc:
@@ -186,26 +215,16 @@ def _prepare_pt2e_quantized_module(
     return quantized_module, quant_config.QuantConfig(pt2e_quantizer=quantizer)
 
 
-def _validate_nhwc_output_compatibility(
-    model: torch.nn.Module,
-    example_input: torch.Tensor,
-) -> None:
-    with torch.no_grad():
-        outputs = model(example_input)
-
-    if isinstance(outputs, (tuple, list)):
-        if not outputs:
-            raise ConfigurationError("--nhwc-output requested but model returned no outputs.")
-        output = outputs[0]
-    else:
-        output = outputs
-
-    if not torch.is_tensor(output):
-        raise ConfigurationError("--nhwc-output currently requires tensor outputs.")
-    if output.ndim < 3:
+def _validate_nhwc_input_compatibility(example_input: torch.Tensor) -> None:
+    if example_input.ndim < 3:
         raise ConfigurationError(
-            "--nhwc-output requires output rank >= 3 (for NCHW -> NHWC transposition)."
+            "--nhwc-input requires rank >= 3 (for NHWC -> NCHW transposition)."
         )
+
+
+def _to_nhwc_input(example_input: torch.Tensor) -> torch.Tensor:
+    dims = [0, *range(2, example_input.ndim), 1]
+    return example_input.permute(*dims).contiguous()
 
 
 def _verify_tflite_model(output_path: Path) -> None:

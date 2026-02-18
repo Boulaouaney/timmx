@@ -77,12 +77,27 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_int8.tflite
 ```
 
-Enable NHWC output layout (first output only):
+Use a calibration tensor file for quantized modes:
+
+```bash
+uv run python - <<'PY'
+import torch
+torch.save(torch.randn(64, 3, 224, 224), "calibration.pt")
+PY
+
+uv run timmx export litert resnet18 \
+  --mode int8 \
+  --calibration-data ./calibration.pt \
+  --calibration-steps 8 \
+  --output ./artifacts/resnet18_int8_calibrated.tflite
+```
+
+Enable NHWC input layout (first input only):
 
 ```bash
 uv run timmx export litert resnet18 \
   --mode fp32 \
-  --nhwc-output \
+  --nhwc-input \
   --output ./artifacts/resnet18_nhwc.tflite
 ```
 

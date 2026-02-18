@@ -19,21 +19,13 @@ class _ConvModel(torch.nn.Module):
         return self.conv(x)
 
 
-class _VectorModel(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.pool = torch.nn.AdaptiveAvgPool2d((1, 1))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.pool(x)
-        return torch.flatten(x, 1)
-
-
 def _build_args(
     output_path: Path,
     *,
     mode: str = "fp32",
-    nhwc_output: bool = False,
+    nhwc_input: bool = False,
+    calibration_data: Path | None = None,
+    calibration_steps: int | None = None,
     verify: bool = True,
 ) -> argparse.Namespace:
     return argparse.Namespace(
@@ -47,7 +39,9 @@ def _build_args(
         input_size=[3, 16, 16],
         device="cpu",
         mode=mode,
-        nhwc_output=nhwc_output,
+        calibration_data=calibration_data,
+        calibration_steps=calibration_steps,
+        nhwc_input=nhwc_input,
         verify=verify,
         exportable=True,
     )
@@ -94,12 +88,12 @@ def test_export_litert_modes_include_expected_tensor_types(
     assert expected_dtype in dtypes
 
 
-def test_export_litert_nhwc_output_changes_output_layout(
+def test_export_litert_nhwc_input_changes_input_layout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output_path = tmp_path / "model_nhwc.tflite"
-    args = _build_args(output_path, mode="fp32", nhwc_output=True)
+    args = _build_args(output_path, mode="fp32", nhwc_input=True)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = LiteRTBackend()
@@ -108,20 +102,45 @@ def test_export_litert_nhwc_output_changes_output_layout(
     assert exit_code == 0
     interpreter = tfl_interpreter.Interpreter(model_path=str(output_path))
     runner = interpreter.get_signature_runner("serving_default")
-    input_key = next(iter(runner.get_input_details().keys()))
-    outputs = runner(**{input_key: np.random.randn(1, 3, 16, 16).astype(np.float32)})
+    input_name, input_details = next(iter(runner.get_input_details().items()))
+    assert tuple(input_details["shape"]) == (2, 16, 16, 3)
+    outputs = runner(**{input_name: np.random.randn(2, 16, 16, 3).astype(np.float32)})
     output_tensor = next(iter(outputs.values()))
-    assert output_tensor.shape == (1, 16, 16, 4)
+    assert output_tensor.shape == (2, 4, 16, 16)
 
 
-def test_export_litert_nhwc_output_rejects_rank_2_outputs(
+def test_export_litert_rejects_calibration_args_for_fp32(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    output_path = tmp_path / "invalid_nhwc.tflite"
-    args = _build_args(output_path, mode="fp32", nhwc_output=True)
-    _patch_model_helpers(monkeypatch, _VectorModel().eval())
+    output_path = tmp_path / "invalid_calibration_mode.tflite"
+    calibration_path = tmp_path / "calibration.pt"
+    torch.save(torch.randn(4, 3, 16, 16), calibration_path)
+
+    args = _build_args(output_path, mode="fp32", calibration_data=calibration_path)
 
     backend = LiteRTBackend()
     with pytest.raises(ConfigurationError):
         backend.run(args)
+
+
+def test_export_litert_int8_with_calibration_data_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "model_int8_calibrated.tflite"
+    calibration_path = tmp_path / "calibration.pt"
+    torch.save(torch.randn(6, 3, 16, 16), calibration_path)
+
+    args = _build_args(
+        output_path,
+        mode="int8",
+        calibration_data=calibration_path,
+        calibration_steps=2,
+    )
+    _patch_model_helpers(monkeypatch, _ConvModel().eval())
+
+    backend = LiteRTBackend()
+    exit_code = backend.run(args)
+
+    assert exit_code == 0
+    assert output_path.exists()

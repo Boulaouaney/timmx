@@ -90,11 +90,17 @@ def test_export_litert_arguments_parse() -> None:
             "artifacts/model.tflite",
             "--mode",
             "dynamic-int8",
-            "--nhwc-output",
+            "--calibration-data",
+            "calibration.pt",
+            "--calibration-steps",
+            "4",
+            "--nhwc-input",
         ]
     )
     assert args.command == "export"
     assert args.format == "litert"
     assert args.model_name == "resnet18"
     assert args.mode == "dynamic-int8"
-    assert args.nhwc_output is True
+    assert args.calibration_data.name == "calibration.pt"
+    assert args.calibration_steps == 4
+    assert args.nhwc_input is True
