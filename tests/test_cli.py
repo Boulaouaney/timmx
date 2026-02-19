@@ -23,6 +23,7 @@ def test_export_help_lists_backends() -> None:
     assert "onnx" in result.output
     assert "coreml" in result.output
     assert "litert" in result.output
+    assert "tensorrt" in result.output
     assert "torch-export" in result.output
 
 
@@ -51,6 +52,17 @@ def test_export_litert_help_shows_options() -> None:
     assert "--mode" in result.output
     assert "calibration-da" in result.output
     assert "--nhwc-input" in result.output
+
+
+def test_export_tensorrt_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "tensorrt", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--mode" in result.output
+    assert "--workspace" in result.output
+    assert "--dynamic-batch" in result.output
+    assert "calibration-da" in result.output
+    assert "--keep-onnx" in result.output
 
 
 def test_export_torch_export_help_shows_options() -> None:

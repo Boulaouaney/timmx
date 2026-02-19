@@ -7,6 +7,7 @@ Current format support:
 - Core ML (`timmx export coreml ...`)
 - LiteRT / TFLite (`timmx export litert ...`)
 - ONNX (`timmx export onnx ...`)
+- TensorRT (`timmx export tensorrt ...`)
 - torch.export archive (`timmx export torch-export ...`)
 
 ## Requirements
@@ -101,6 +102,63 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_nhwc.tflite
 ```
 
+### Export a model to TensorRT
+
+Requires an NVIDIA GPU with CUDA and the `tensorrt` package:
+
+```bash
+uv pip install tensorrt
+```
+
+Basic fp32 export:
+
+```bash
+uv run timmx export tensorrt resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18.engine
+```
+
+FP16 export:
+
+```bash
+uv run timmx export tensorrt resnet18 \
+  --pretrained \
+  --mode fp16 \
+  --output ./artifacts/resnet18_fp16.engine
+```
+
+INT8 export with calibration data:
+
+```bash
+uv run timmx export tensorrt resnet18 \
+  --pretrained \
+  --mode int8 \
+  --calibration-data ./calibration.pt \
+  --calibration-steps 8 \
+  --output ./artifacts/resnet18_int8.engine
+```
+
+Dynamic batch size:
+
+```bash
+uv run timmx export tensorrt resnet18 \
+  --pretrained \
+  --dynamic-batch \
+  --batch-size 4 \
+  --batch-min 1 \
+  --batch-max 32 \
+  --output ./artifacts/resnet18_dynamic.engine
+```
+
+Keep the intermediate ONNX file:
+
+```bash
+uv run timmx export tensorrt resnet18 \
+  --pretrained \
+  --keep-onnx \
+  --output ./artifacts/resnet18.engine
+```
+
 ### Export a fine-tuned checkpoint to ONNX
 
 ```bash
@@ -132,7 +190,7 @@ PyTorch can capture a symbolic batch dimension.
 - [x] torch.export
 - [ ] ExecuTorch (XNNPACK + more delegates TBD)
 - [ ] OpenVINO
-- [ ] TensorRT
+- [x] TensorRT
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
 - [ ] TFLite Edge TPU
