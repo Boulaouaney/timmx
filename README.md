@@ -1,14 +1,16 @@
 # timmx
 
-`timmx` is an extensible CLI and Python package for exporting `timm` models to deployment
-formats.
+An extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to various deployment formats. Born out of having too many one-off export scripts for fine-tuned timm models — `timmx` unifies them behind a single command-line interface with a plugin-based backend system.
 
-Current format support:
-- Core ML (`timmx export coreml ...`)
-- LiteRT / TFLite (`timmx export litert ...`)
-- ONNX (`timmx export onnx ...`)
-- TensorRT (`timmx export tensorrt ...`)
-- torch.export archive (`timmx export torch-export ...`)
+## Supported Formats
+
+| Format | Command | Output |
+|--------|---------|--------|
+| ONNX | `timmx export onnx` | `.onnx` |
+| Core ML | `timmx export coreml` | `.mlpackage` / `.mlmodel` |
+| LiteRT / TFLite | `timmx export litert` | `.tflite` |
+| TensorRT | `timmx export tensorrt` | `.engine` |
+| torch.export | `timmx export torch-export` | `.pt2` |
 
 ## Requirements
 
@@ -22,13 +24,25 @@ uv sync --group dev
 uv run timmx --help
 ```
 
-### Export a pretrained model to ONNX
+## Usage Examples
+
+### ONNX
 
 ```bash
 uv run timmx export onnx resnet18 --pretrained --output ./artifacts/resnet18.onnx
 ```
 
-### Export a model to Core ML
+Export a fine-tuned checkpoint with dynamic batching:
+
+```bash
+uv run timmx export onnx resnet18 \
+  --checkpoint ./checkpoints/model.pth \
+  --input-size 3 224 224 \
+  --dynamic-batch \
+  --output ./artifacts/resnet18_finetuned.onnx
+```
+
+### Core ML
 
 ```bash
 uv run timmx export coreml resnet18 \
@@ -38,7 +52,7 @@ uv run timmx export coreml resnet18 \
   --output ./artifacts/resnet18.mlpackage
 ```
 
-For flexible batch in Core ML:
+Flexible batch size:
 
 ```bash
 uv run timmx export coreml resnet18 \
@@ -48,21 +62,9 @@ uv run timmx export coreml resnet18 \
   --output ./artifacts/resnet18_dynamic.mlpackage
 ```
 
-### Export a model to LiteRT / TFLite
+### LiteRT / TFLite
 
-```bash
-uv run timmx export litert resnet18 \
-  --mode fp32 \
-  --output ./artifacts/resnet18.tflite
-```
-
-LiteRT modes:
-- `fp32`
-- `fp16`
-- `dynamic-int8`
-- `int8`
-
-Example `fp16`:
+Supported modes: `fp32`, `fp16`, `dynamic-int8`, `int8`.
 
 ```bash
 uv run timmx export litert resnet18 \
@@ -70,30 +72,20 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_fp16.tflite
 ```
 
-Example `int8`:
+INT8 with calibration data:
 
 ```bash
-uv run timmx export litert resnet18 \
-  --mode int8 \
-  --output ./artifacts/resnet18_int8.tflite
-```
-
-Use a calibration tensor file for quantized modes:
-
-```bash
-uv run python - <<'PY'
-import torch
-torch.save(torch.randn(64, 3, 224, 224), "calibration.pt")
-PY
+# generate a calibration tensor
+uv run python -c "import torch; torch.save(torch.randn(64, 3, 224, 224), 'calibration.pt')"
 
 uv run timmx export litert resnet18 \
   --mode int8 \
   --calibration-data ./calibration.pt \
   --calibration-steps 8 \
-  --output ./artifacts/resnet18_int8_calibrated.tflite
+  --output ./artifacts/resnet18_int8.tflite
 ```
 
-Enable NHWC input layout (first input only):
+NHWC input layout:
 
 ```bash
 uv run timmx export litert resnet18 \
@@ -102,23 +94,9 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_nhwc.tflite
 ```
 
-### Export a model to TensorRT
+### TensorRT
 
-Requires an NVIDIA GPU with CUDA and the `tensorrt` package:
-
-```bash
-uv pip install tensorrt
-```
-
-Basic fp32 export:
-
-```bash
-uv run timmx export tensorrt resnet18 \
-  --pretrained \
-  --output ./artifacts/resnet18.engine
-```
-
-FP16 export:
+Requires an NVIDIA GPU with CUDA and the `tensorrt` package (`uv pip install tensorrt`).
 
 ```bash
 uv run timmx export tensorrt resnet18 \
@@ -127,7 +105,7 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_fp16.engine
 ```
 
-INT8 export with calibration data:
+INT8 with calibration:
 
 ```bash
 uv run timmx export tensorrt resnet18 \
@@ -150,26 +128,7 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_dynamic.engine
 ```
 
-Keep the intermediate ONNX file:
-
-```bash
-uv run timmx export tensorrt resnet18 \
-  --pretrained \
-  --keep-onnx \
-  --output ./artifacts/resnet18.engine
-```
-
-### Export a fine-tuned checkpoint to ONNX
-
-```bash
-uv run timmx export onnx resnet18 \
-  --checkpoint ./checkpoints/model.pth \
-  --input-size 3 224 224 \
-  --dynamic-batch \
-  --output ./artifacts/resnet18_finetuned.onnx
-```
-
-### Export a model with `torch.export` (`.pt2`)
+### torch.export
 
 ```bash
 uv run timmx export torch-export resnet18 \
@@ -179,8 +138,7 @@ uv run timmx export torch-export resnet18 \
   --output ./artifacts/resnet18.pt2
 ```
 
-When using `--dynamic-batch` with `torch-export`, set `--batch-size` to at least `2` so
-PyTorch can capture a symbolic batch dimension.
+> When using `--dynamic-batch`, set `--batch-size` to at least `2` so PyTorch can capture a symbolic batch dimension.
 
 ## Roadmap
 
@@ -188,9 +146,9 @@ PyTorch can capture a symbolic batch dimension.
 - [x] Core ML
 - [x] LiteRT / TFLite
 - [x] torch.export
+- [x] TensorRT
 - [ ] ExecuTorch (XNNPACK + more delegates TBD)
 - [ ] OpenVINO
-- [x] TensorRT
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
 - [ ] TFLite Edge TPU
@@ -200,19 +158,20 @@ PyTorch can capture a symbolic batch dimension.
 - [ ] PaddlePaddle
 - [ ] TorchScript (legacy)
 
-## Development Commands
+## Development
 
 ```bash
-uv sync --group dev
-uvx ruff format .
-uvx ruff check .
-uv run pytest
-uv build
+uv sync --group dev          # install deps including pytest
+uvx ruff format .            # format
+uvx ruff check .             # lint
+uv run pytest                # test
+uv build                     # build
 ```
 
-## Extending with New Formats
+## Adding a New Backend
 
-Backends are isolated under `src/timmx/export/`. Add a new backend by implementing the
-`ExportBackend` contract and registering it in `create_builtin_registry()`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a step-by-step guide on implementing and registering a new export backend.
 
-Detailed contributor guidance is in `AGENTS.md`.
+## AI Disclaimer
+
+This project is developed with the assistance of AI tools. The original export logic comes from various standalone scripts I wrote for exporting fine-tuned timm models to different deployment formats. The process of consolidating these scripts into a unified CLI tool has been aided by AI, with my oversight at every step, reviewing generated code, manually fixing issues during backend porting, and validating that exports produce correct results.
