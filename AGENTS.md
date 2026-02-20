@@ -12,6 +12,7 @@ Current built-in backends:
 - `onnx`
 - `tensorrt`
 - `torch-export`
+- `torchscript`
 
 ## Non-Negotiable Tooling Rules
 
@@ -64,6 +65,7 @@ Runtime nuance:
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
+- For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
 
 ## Adding a New Export Backend
 

@@ -6,6 +6,7 @@ from timmx.export.litert_backend import LiteRTBackend
 from timmx.export.onnx_backend import OnnxBackend
 from timmx.export.tensorrt_backend import TensorRTBackend
 from timmx.export.torch_export_backend import TorchExportBackend
+from timmx.export.torchscript_backend import TorchScriptBackend
 
 
 class BackendRegistry:
@@ -39,4 +40,5 @@ def create_builtin_registry() -> BackendRegistry:
     registry.register(OnnxBackend())
     registry.register(TensorRTBackend())
     registry.register(TorchExportBackend())
+    registry.register(TorchScriptBackend())
     return registry

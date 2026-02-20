@@ -25,6 +25,7 @@ def test_export_help_lists_backends() -> None:
     assert "litert" in result.output
     assert "tensorrt" in result.output
     assert "torch-export" in result.output
+    assert "torchscript" in result.output
 
 
 def test_export_onnx_help_shows_options() -> None:
@@ -71,3 +72,11 @@ def test_export_torch_export_help_shows_options() -> None:
     assert "--output" in result.output
     assert "--dynamic-batch" in result.output
     assert "--strict" in result.output
+
+
+def test_export_torchscript_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "torchscript", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--method" in result.output
+    assert "--verify" in result.output
