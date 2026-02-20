@@ -10,6 +10,7 @@ Current built-in backends:
 - `coreml`
 - `litert`
 - `onnx`
+- `tensorrt`
 - `torch-export`
 
 ## Non-Negotiable Tooling Rules
@@ -58,6 +59,10 @@ Runtime nuance:
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
 - For `litert` quantized modes, calibration data can be provided via `--calibration-data` as a
   torch-saved tensor with shape `(N, C, H, W)`.
+- For `tensorrt`, `--device cuda` and the `tensorrt` pip package are required (not in core deps).
+- For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
+- For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
+  dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 
 ## Adding a New Export Backend
