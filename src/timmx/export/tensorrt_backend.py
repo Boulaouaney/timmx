@@ -138,6 +138,11 @@ class TensorRTBackend(ExportBackend):
                 )
 
             if dynamic_batch:
+                if batch_size < 2:
+                    raise ConfigurationError(
+                        "--batch-size must be >= 2 with --dynamic-batch "
+                        "for stable symbolic shape capture."
+                    )
                 if batch_min < 1:
                     raise ConfigurationError("--batch-min must be >= 1.")
                 if batch_max < batch_size:
@@ -175,16 +180,24 @@ class TensorRTBackend(ExportBackend):
 
             example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
 
+            export_kwargs: dict[str, object] = {
+                "opset_version": opset,
+                "input_names": ["input"],
+                "output_names": ["output"],
+                "dynamo": True,
+                "fallback": True,
+                "external_data": False,
+            }
+            if dynamic_batch:
+                batch_dim = torch.export.Dim("batch", min=batch_min, max=batch_max)
+                export_kwargs["dynamic_shapes"] = {"x": {0: batch_dim}}
+
             try:
                 torch.onnx.export(
                     model,
                     (example_input,),
                     f=str(onnx_path),
-                    opset_version=opset,
-                    input_names=["input"],
-                    output_names=["output"],
-                    dynamo=True,
-                    fallback=True,
+                    **export_kwargs,
                 )
             except Exception as exc:
                 if temp_dir is not None:

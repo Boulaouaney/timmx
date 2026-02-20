@@ -135,6 +135,19 @@ def test_tensorrt_rejects_invalid_opset(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("_fake_cuda")
+def test_tensorrt_rejects_dynamic_batch_with_batch_size_1(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(
+        tmp_path / "model.engine",
+        dynamic_batch=True,
+        batch_size=1,
+    )
+    backend = TensorRTBackend()
+    command = backend.create_command()
+    with pytest.raises(ConfigurationError, match="--batch-size must be >= 2"):
+        command(**kwargs)
+
+
+@pytest.mark.usefixtures("_fake_cuda")
 def test_tensorrt_rejects_batch_max_lt_batch_size(tmp_path: Path) -> None:
     kwargs = _build_kwargs(
         tmp_path / "model.engine",
@@ -204,6 +217,43 @@ def test_export_tensorrt_fp32(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 def test_export_tensorrt_fp16(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
     kwargs = _build_kwargs(output_path, mode="fp16")
+    _patch_model_helpers(monkeypatch, _ConvModel().eval())
+
+    backend = TensorRTBackend()
+    command = backend.create_command()
+    command(**kwargs)
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
+@requires_cuda
+@requires_tensorrt
+def test_export_tensorrt_dynamic_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output_path = tmp_path / "model.engine"
+    kwargs = _build_kwargs(
+        output_path,
+        mode="fp32",
+        dynamic_batch=True,
+        batch_size=2,
+        batch_min=1,
+        batch_max=8,
+    )
+    _patch_model_helpers(monkeypatch, _ConvModel().eval())
+
+    backend = TensorRTBackend()
+    command = backend.create_command()
+    command(**kwargs)
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
+@requires_cuda
+@requires_tensorrt
+def test_export_tensorrt_int8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output_path = tmp_path / "model.engine"
+    kwargs = _build_kwargs(output_path, mode="int8")
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = TensorRTBackend()
