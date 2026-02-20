@@ -11,6 +11,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
 | TensorRT | `timmx export tensorrt` | `.engine` |
 | torch.export | `timmx export torch-export` | `.pt2` |
+| TorchScript | `timmx export torchscript` | `.pt` |
 
 ## Requirements
 
@@ -140,6 +141,23 @@ uv run timmx export torch-export resnet18 \
 
 > When using `--dynamic-batch`, set `--batch-size` to at least `2` so PyTorch can capture a symbolic batch dimension.
 
+### TorchScript
+
+```bash
+uv run timmx export torchscript resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18.pt
+```
+
+Use `torch.jit.script` instead of the default `trace`:
+
+```bash
+uv run timmx export torchscript resnet18 \
+  --pretrained \
+  --method script \
+  --output ./artifacts/resnet18_scripted.pt
+```
+
 ## Roadmap
 
 - [x] ONNX
@@ -156,7 +174,7 @@ uv run timmx export torch-export resnet18 \
 - [ ] RKNN
 - [ ] MNN
 - [ ] PaddlePaddle
-- [ ] TorchScript (legacy)
+- [x] TorchScript
 
 ## Development
 

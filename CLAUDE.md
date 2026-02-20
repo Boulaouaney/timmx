@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`timmx` is an extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to deployment formats. Built-in backends: `onnx`, `coreml`, `litert`, `tensorrt`, `torch-export`.
+`timmx` is an extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to deployment formats. Built-in backends: `onnx`, `coreml`, `litert`, `tensorrt`, `torch-export`, `torchscript`.
 
 ## Tooling
 
@@ -43,7 +43,7 @@ The codebase uses a **registry-based plugin architecture**:
 - `src/timmx/export/calibration.py` — calibration data loading/slicing for quantized exports
 - `src/timmx/errors.py` — `TimmxError` → `ConfigurationError` / `ExportError`
 
-Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tensorrt_backend.py`, `torch_export_backend.py`) owns all its format-specific CLI flags and export logic. The CLI never needs modification when adding a new backend.
+Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tensorrt_backend.py`, `torch_export_backend.py`, `torchscript_backend.py`) owns all its format-specific CLI flags and export logic. The CLI never needs modification when adding a new backend.
 
 ## Adding a New Backend
 
@@ -64,3 +64,4 @@ Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tens
 - **litert**: quantization modes are `fp32`, `fp16`, `dynamic-int8`, `int8`; `--calibration-data` expects a torch-saved tensor of shape `(N, C, H, W)`; `--nhwc-input` exposes channel-last input layout
 - **tensorrt**: requires `--device cuda` and the `tensorrt` pip package (not in core deps); ONNX intermediate export uses `external_data=False` to embed weights inline; `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for dynamic shape capture; quantization modes are `fp32`, `fp16`, `int8`
 - **torch-export**: dynamic batch capture requires `--batch-size >= 2` for stable symbolic shapes
+- **torchscript**: `--method` selects `trace` (default, recommended) or `script`
