@@ -46,7 +46,7 @@ def build_export_app(registry: BackendRegistry | None = None) -> None:
             try:
                 _fn(*args, **kwargs)
             except TimmxError as exc:
-                console.print(f"[bold red]error:[/bold red] {exc}", highlight=False)
+                console.print(f"[bold red]error:[/bold red] {exc}", highlight=False, stderr=True)
                 raise typer.Exit(code=2) from exc
 
         export_app.command(name=name, help=backend.help)(wrapped)
