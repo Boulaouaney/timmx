@@ -9,6 +9,7 @@ from typing import Annotated
 import torch
 import typer
 
+from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
@@ -173,6 +174,8 @@ class TensorRTBackend(ExportBackend):
                 temp_dir = tempfile.TemporaryDirectory()
                 onnx_path = Path(temp_dir.name) / "model.onnx"
 
+            _warn_if_missing_onnxscript()
+
             export_kwargs: dict[str, object] = {
                 "opset_version": opset,
                 "input_names": ["input"],
@@ -311,6 +314,19 @@ def _create_calibrator(
     cache_path = calibration_cache or Path("calibration.cache")
     calibrator_cls = _make_calibrator_class(trt)
     return calibrator_cls(batches=batches, cache_path=cache_path)
+
+
+def _warn_if_missing_onnxscript() -> None:
+    try:
+        import onnxscript  # noqa: F401
+    except ImportError:
+        console.print(
+            "[yellow]warning:[/yellow] onnxscript is not installed. "
+            "The ONNX intermediate export will fall back to the legacy TorchScript-based "
+            "exporter, which is deprecated. Install with: pip install 'timmx[onnx]'",
+            highlight=False,
+            stderr=True,
+        )
 
 
 def _import_tensorrt() -> object:
