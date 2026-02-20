@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Annotated
 
 import torch
@@ -9,7 +8,18 @@ import typer
 
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
-from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
+from timmx.export.common import (
+    BatchSizeOpt,
+    CheckpointOpt,
+    DeviceOpt,
+    InChansOpt,
+    InputSizeOpt,
+    ModelNameArg,
+    NumClassesOpt,
+    OutputOpt,
+    PretrainedOpt,
+    prepare_export,
+)
 from timmx.export.types import Device
 
 
@@ -19,36 +29,18 @@ class TorchExportBackend(ExportBackend):
 
     def create_command(self) -> Callable[..., None]:
         def command(
-            model_name: Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")],
-            output: Annotated[
-                Path,
-                typer.Option(help="Path to write the exported program archive (typically .pt2)."),
-            ],
-            checkpoint: Annotated[
-                Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")
-            ] = None,
-            pretrained: Annotated[
-                bool, typer.Option("--pretrained", help="Load timm pretrained weights.")
-            ] = False,
-            num_classes: Annotated[
-                int | None, typer.Option(help="Override the model classifier output classes.")
-            ] = None,
-            in_chans: Annotated[
-                int | None, typer.Option(help="Override model input channels.")
-            ] = None,
-            batch_size: Annotated[
-                int, typer.Option(help="Example input batch size for export.")
-            ] = 1,
-            input_size: Annotated[
-                tuple[int, int, int] | None,
-                typer.Option(help="Explicit input shape as C H W."),
-            ] = None,
+            model_name: ModelNameArg,
+            output: OutputOpt,
+            checkpoint: CheckpointOpt = None,
+            pretrained: PretrainedOpt = False,
+            num_classes: NumClassesOpt = None,
+            in_chans: InChansOpt = None,
+            batch_size: BatchSizeOpt = 1,
+            input_size: InputSizeOpt = None,
             dynamic_batch: Annotated[
                 bool, typer.Option("--dynamic-batch", help="Mark batch axis as dynamic.")
             ] = False,
-            device: Annotated[
-                Device, typer.Option(help="Device used for model instantiation and tracing.")
-            ] = Device.cpu,
+            device: DeviceOpt = Device.cpu,
             strict: Annotated[
                 bool, typer.Option(help="Enable strict graph capture during torch.export.")
             ] = False,
@@ -57,37 +49,31 @@ class TorchExportBackend(ExportBackend):
                 typer.Option(help="Load the saved .pt2 archive after export to validate it."),
             ] = True,
         ) -> None:
-            validate_common_args(batch_size=batch_size, device=device)
             if dynamic_batch and batch_size < 2:
                 raise ConfigurationError(
                     "--dynamic-batch requires --batch-size >= 2 for stable symbolic shape capture."
                 )
 
-            output_path = Path(output).expanduser().resolve()
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            model = create_timm_model(
-                model_name,
-                pretrained=pretrained,
+            prep = prepare_export(
+                model_name=model_name,
+                output=output,
                 checkpoint=checkpoint,
+                pretrained=pretrained,
                 num_classes=num_classes,
                 in_chans=in_chans,
+                batch_size=batch_size,
+                input_size=input_size,
+                device=device,
             )
-            resolved_input_size = resolve_input_size(model, input_size)
 
-            torch_device = torch.device(device)
-            model = model.to(torch_device)
-            model.eval()
-
-            example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
             dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
             if dynamic_batch:
                 dynamic_shapes = ({0: torch.export.Dim("batch")},)
 
             try:
                 exported_program = torch.export.export(
-                    model,
-                    (example_input,),
+                    prep.model,
+                    (prep.example_input,),
                     dynamic_shapes=dynamic_shapes,
                     strict=strict,
                 )
@@ -95,13 +81,13 @@ class TorchExportBackend(ExportBackend):
                 raise ExportError(f"torch.export capture failed: {exc}") from exc
 
             try:
-                torch.export.save(exported_program, str(output_path))
+                torch.export.save(exported_program, str(prep.output_path))
             except Exception as exc:
                 raise ExportError(f"Failed to save torch.export archive: {exc}") from exc
 
             if verify:
                 try:
-                    torch.export.load(str(output_path))
+                    torch.export.load(str(prep.output_path))
                 except Exception as exc:
                     raise ExportError(f"Saved torch.export archive failed to load: {exc}") from exc
 

@@ -1,15 +1,95 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import timm
 import torch
+import typer
 from timm.data import resolve_data_config
 from timm.utils import reparameterize_model
 
 from timmx.errors import ConfigurationError, ExportError
+from timmx.export.types import Device
 
 DEFAULT_INPUT_SIZE = (3, 224, 224)
+
+# ---------------------------------------------------------------------------
+# Shared Typer type aliases for common CLI parameters
+# ---------------------------------------------------------------------------
+
+ModelNameArg = Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")]
+OutputOpt = Annotated[Path, typer.Option(help="Path to write the exported model.")]
+CheckpointOpt = Annotated[Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")]
+PretrainedOpt = Annotated[bool, typer.Option("--pretrained", help="Load timm pretrained weights.")]
+NumClassesOpt = Annotated[
+    int | None, typer.Option(help="Override the model classifier output classes.")
+]
+InChansOpt = Annotated[int | None, typer.Option(help="Override model input channels.")]
+BatchSizeOpt = Annotated[int, typer.Option(help="Example input batch size for export.")]
+InputSizeOpt = Annotated[
+    tuple[int, int, int] | None, typer.Option(help="Explicit input shape as C H W.")
+]
+DeviceOpt = Annotated[Device, typer.Option(help="Device used for model instantiation and tracing.")]
+
+
+# ---------------------------------------------------------------------------
+# PreparedExport: result of the common model-creation / input-preparation step
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PreparedExport:
+    """Bundle returned by :func:`prepare_export` with everything backends need."""
+
+    model: torch.nn.Module
+    example_input: torch.Tensor
+    resolved_input_size: tuple[int, int, int]
+    output_path: Path
+    torch_device: torch.device
+
+
+def prepare_export(
+    *,
+    model_name: str,
+    output: Path,
+    checkpoint: Path | None,
+    pretrained: bool,
+    num_classes: int | None,
+    in_chans: int | None,
+    batch_size: int,
+    input_size: tuple[int, int, int] | None,
+    device: Device | str,
+) -> PreparedExport:
+    """Validate common args, create the timm model, and build an example input."""
+    validate_common_args(batch_size=batch_size, device=device)
+
+    output_path = Path(output).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model = create_timm_model(
+        model_name,
+        pretrained=pretrained,
+        checkpoint=checkpoint,
+        num_classes=num_classes,
+        in_chans=in_chans,
+    )
+    resolved_input_size = resolve_input_size(model, input_size)
+
+    torch_device = torch.device(device)
+    model = model.to(torch_device)
+    model.eval()
+
+    example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
+
+    return PreparedExport(
+        model=model,
+        example_input=example_input,
+        resolved_input_size=resolved_input_size,
+        output_path=output_path,
+        torch_device=torch_device,
+    )
 
 
 def create_timm_model(

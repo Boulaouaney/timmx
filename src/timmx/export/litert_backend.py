@@ -11,7 +11,18 @@ import typer
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
-from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
+from timmx.export.common import (
+    BatchSizeOpt,
+    CheckpointOpt,
+    DeviceOpt,
+    InChansOpt,
+    InputSizeOpt,
+    ModelNameArg,
+    NumClassesOpt,
+    OutputOpt,
+    PretrainedOpt,
+    prepare_export,
+)
 from timmx.export.types import Device
 
 
@@ -28,30 +39,15 @@ class LiteRTBackend(ExportBackend):
 
     def create_command(self) -> Callable[..., None]:
         def command(
-            model_name: Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")],
-            output: Annotated[Path, typer.Option(help="Path to write the LiteRT model (.tflite).")],
-            checkpoint: Annotated[
-                Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")
-            ] = None,
-            pretrained: Annotated[
-                bool, typer.Option("--pretrained", help="Load timm pretrained weights.")
-            ] = False,
-            num_classes: Annotated[
-                int | None, typer.Option(help="Override the model classifier output classes.")
-            ] = None,
-            in_chans: Annotated[
-                int | None, typer.Option(help="Override model input channels.")
-            ] = None,
-            batch_size: Annotated[
-                int, typer.Option(help="Example input batch size for export and calibration.")
-            ] = 2,
-            input_size: Annotated[
-                tuple[int, int, int] | None,
-                typer.Option(help="Explicit input shape as C H W."),
-            ] = None,
-            device: Annotated[
-                Device, typer.Option(help="Device used for model instantiation and tracing.")
-            ] = Device.cpu,
+            model_name: ModelNameArg,
+            output: OutputOpt,
+            checkpoint: CheckpointOpt = None,
+            pretrained: PretrainedOpt = False,
+            num_classes: NumClassesOpt = None,
+            in_chans: InChansOpt = None,
+            batch_size: BatchSizeOpt = 1,
+            input_size: InputSizeOpt = None,
+            device: DeviceOpt = Device.cpu,
             mode: Annotated[
                 LiteRTMode, typer.Option(help="Export precision / quantization mode.")
             ] = LiteRTMode.fp32,
@@ -82,7 +78,6 @@ class LiteRTBackend(ExportBackend):
                 bool, typer.Option(help="Load and allocate the exported TFLite model.")
             ] = True,
         ) -> None:
-            validate_common_args(batch_size=batch_size, device=device)
             int8_modes = {LiteRTMode.dynamic_int8, LiteRTMode.int8}
 
             if mode in int8_modes and device != Device.cpu:
@@ -99,51 +94,44 @@ class LiteRTBackend(ExportBackend):
 
             litert_torch = _import_litert_torch()
 
-            output_path = Path(output).expanduser().resolve()
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            model = create_timm_model(
-                model_name,
-                pretrained=pretrained,
+            prep = prepare_export(
+                model_name=model_name,
+                output=output,
                 checkpoint=checkpoint,
+                pretrained=pretrained,
                 num_classes=num_classes,
                 in_chans=in_chans,
+                batch_size=batch_size,
+                input_size=input_size,
+                device=device,
             )
-            resolved_input_size = resolve_input_size(model, input_size)
 
-            torch_device = torch.device(device)
-            model = model.to(torch_device)
-            model.eval()
-
-            convert_module: torch.nn.Module = model
+            convert_module: torch.nn.Module = prep.model
             quant_config = None
             converter_flags: dict[str, object] = {}
-            example_input: torch.Tensor
+            example_input = prep.example_input
 
             if mode == LiteRTMode.fp16:
-                example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
                 tensorflow = _import_tensorflow()
                 converter_flags = {
                     "optimizations": [tensorflow.lite.Optimize.DEFAULT],
                     "target_spec": {"supported_types": [tensorflow.float16]},
                 }
-            elif mode in {LiteRTMode.dynamic_int8, LiteRTMode.int8}:
+            elif mode in int8_modes:
                 calibration_batches = resolve_calibration_batches(
                     calibration_data=calibration_data,
                     calibration_steps=calibration_steps,
                     batch_size=batch_size,
-                    input_size=resolved_input_size,
-                    device=torch_device,
+                    input_size=prep.resolved_input_size,
+                    device=prep.torch_device,
                 )
                 example_input = calibration_batches[0]
                 convert_module, quant_config = _prepare_pt2e_quantized_module(
-                    model,
+                    prep.model,
                     example_input,
                     calibration_batches=calibration_batches,
                     is_dynamic=(mode == LiteRTMode.dynamic_int8),
                 )
-            else:
-                example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
 
             if nhwc_input:
                 _validate_nhwc_input_compatibility(example_input)
@@ -161,12 +149,12 @@ class LiteRTBackend(ExportBackend):
                 raise ExportError(f"LiteRT conversion failed: {exc}") from exc
 
             try:
-                edge_model.export(str(output_path))
+                edge_model.export(str(prep.output_path))
             except Exception as exc:
                 raise ExportError(f"Failed to save LiteRT model: {exc}") from exc
 
             if verify:
-                _verify_tflite_model(output_path)
+                _verify_tflite_model(prep.output_path)
 
         return command
 

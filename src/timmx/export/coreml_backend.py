@@ -2,15 +2,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import StrEnum
-from pathlib import Path
 from typing import Annotated
 
-import torch
 import typer
 
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
-from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
+from timmx.export.common import (
+    BatchSizeOpt,
+    CheckpointOpt,
+    DeviceOpt,
+    InChansOpt,
+    InputSizeOpt,
+    ModelNameArg,
+    NumClassesOpt,
+    OutputOpt,
+    PretrainedOpt,
+    prepare_export,
+)
 from timmx.export.types import Device
 
 
@@ -30,29 +39,14 @@ class CoreMLBackend(ExportBackend):
 
     def create_command(self) -> Callable[..., None]:
         def command(
-            model_name: Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")],
-            output: Annotated[
-                Path, typer.Option(help="Path to write the Core ML model (.mlpackage or .mlmodel).")
-            ],
-            checkpoint: Annotated[
-                Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")
-            ] = None,
-            pretrained: Annotated[
-                bool, typer.Option("--pretrained", help="Load timm pretrained weights.")
-            ] = False,
-            num_classes: Annotated[
-                int | None, typer.Option(help="Override the model classifier output classes.")
-            ] = None,
-            in_chans: Annotated[
-                int | None, typer.Option(help="Override model input channels.")
-            ] = None,
-            batch_size: Annotated[
-                int, typer.Option(help="Example input batch size for export.")
-            ] = 1,
-            input_size: Annotated[
-                tuple[int, int, int] | None,
-                typer.Option(help="Explicit input shape as C H W."),
-            ] = None,
+            model_name: ModelNameArg,
+            output: OutputOpt,
+            checkpoint: CheckpointOpt = None,
+            pretrained: PretrainedOpt = False,
+            num_classes: NumClassesOpt = None,
+            in_chans: InChansOpt = None,
+            batch_size: BatchSizeOpt = 1,
+            input_size: InputSizeOpt = None,
             dynamic_batch: Annotated[
                 bool,
                 typer.Option(
@@ -65,9 +59,7 @@ class CoreMLBackend(ExportBackend):
                     help="Upper bound used for flexible batch when --dynamic-batch is enabled."
                 ),
             ] = 8,
-            device: Annotated[
-                Device, typer.Option(help="Device used for model instantiation and tracing.")
-            ] = Device.cpu,
+            device: DeviceOpt = Device.cpu,
             convert_to: Annotated[
                 ConvertTo, typer.Option(help="Core ML model type to generate.")
             ] = ConvertTo.mlprogram,
@@ -79,7 +71,6 @@ class CoreMLBackend(ExportBackend):
                 bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
             ] = True,
         ) -> None:
-            validate_common_args(batch_size=batch_size, device=device)
             if dynamic_batch:
                 if batch_upper_bound < 1:
                     raise ConfigurationError("--batch-upper-bound must be >= 1.")
@@ -92,26 +83,23 @@ class CoreMLBackend(ExportBackend):
 
             ct = _import_coremltools()
 
-            output_path = Path(output).expanduser().resolve()
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            model = create_timm_model(
-                model_name,
-                pretrained=pretrained,
+            prep = prepare_export(
+                model_name=model_name,
+                output=output,
                 checkpoint=checkpoint,
+                pretrained=pretrained,
                 num_classes=num_classes,
                 in_chans=in_chans,
+                batch_size=batch_size,
+                input_size=input_size,
+                device=device,
             )
-            resolved_input_size = resolve_input_size(model, input_size)
 
-            torch_device = torch.device(device)
-            model = model.to(torch_device)
-            model.eval()
+            import torch
 
-            example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
             with torch.no_grad():
                 try:
-                    traced_model = torch.jit.trace(model, example_input)
+                    traced_model = torch.jit.trace(prep.model, prep.example_input)
                 except Exception as exc:
                     raise ExportError(f"TorchScript trace failed: {exc}") from exc
 
@@ -121,7 +109,7 @@ class CoreMLBackend(ExportBackend):
                     batch_size=batch_size,
                     dynamic_batch=dynamic_batch,
                     batch_upper_bound=batch_upper_bound,
-                    input_size=resolved_input_size,
+                    input_size=prep.resolved_input_size,
                     ct=ct,
                 ),
             )
@@ -141,13 +129,13 @@ class CoreMLBackend(ExportBackend):
                 raise ExportError(f"Core ML conversion failed: {exc}") from exc
 
             try:
-                coreml_model.save(str(output_path))
+                coreml_model.save(str(prep.output_path))
             except Exception as exc:
                 raise ExportError(f"Failed to save Core ML model: {exc}") from exc
 
             if verify:
                 try:
-                    ct.models.MLModel(str(output_path), skip_model_load=True)
+                    ct.models.MLModel(str(prep.output_path), skip_model_load=True)
                 except Exception as exc:
                     raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
 
