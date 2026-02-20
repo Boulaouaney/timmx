@@ -18,10 +18,41 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 - Python `>=3.11`
 - [`uv`](https://docs.astral.sh/uv/)
 
+## Installation
+
+Core install (includes `timm`, `torch`, `typer`, `rich`):
+
+```bash
+pip install timmx
+```
+
+Install with specific backend extras:
+
+```bash
+pip install 'timmx[onnx]'           # ONNX export
+pip install 'timmx[coreml]'         # Core ML export
+pip install 'timmx[litert]'         # LiteRT/TFLite export
+pip install 'timmx[onnx,coreml]'    # multiple backends
+pip install 'timmx[all]'            # all non-platform-specific backends
+```
+
+TensorRT requires CUDA and must be installed separately:
+
+```bash
+pip install tensorrt  # Linux/Windows with CUDA only
+```
+
+Check which backends are available:
+
+```bash
+timmx doctor
+```
+
 ## Quick Start
 
 ```bash
-uv sync --group dev
+uv sync --all-extras --group dev
+uv run timmx doctor
 uv run timmx --help
 ```
 
@@ -97,7 +128,7 @@ uv run timmx export litert resnet18 \
 
 ### TensorRT
 
-Requires an NVIDIA GPU with CUDA and the `tensorrt` package (`uv pip install tensorrt`).
+Requires an NVIDIA GPU with CUDA and the `tensorrt` package (`pip install tensorrt`).
 
 ```bash
 uv run timmx export tensorrt resnet18 \
@@ -158,6 +189,16 @@ uv run timmx export torchscript resnet18 \
   --output ./artifacts/resnet18_scripted.pt
 ```
 
+## Diagnostics
+
+Run `timmx doctor` to check your installation and see which backends are available:
+
+```bash
+timmx doctor
+```
+
+This shows the timmx version, Python/torch versions, and a table of backend availability with install hints for any missing dependencies.
+
 ## Roadmap
 
 - [x] ONNX
@@ -179,11 +220,11 @@ uv run timmx export torchscript resnet18 \
 ## Development
 
 ```bash
-uv sync --group dev          # install deps including pytest
-uvx ruff format .            # format
-uvx ruff check .             # lint
-uv run pytest                # test
-uv build                     # build
+uv sync --all-extras --group dev  # install all extras + pytest
+uvx ruff format .                 # format
+uvx ruff check .                  # lint
+uv run pytest                     # test
+uv build                          # build
 ```
 
 ## Adding a New Backend
