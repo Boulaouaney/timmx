@@ -20,7 +20,6 @@ def _build_kwargs(output_path: Path, dynamic_batch: bool = False) -> dict:
         "device": "cpu",
         "external_data": False,
         "check": True,
-        "exportable": True,
     }
 
 

@@ -54,7 +54,6 @@ def _build_kwargs(
         "calibration_cache": calibration_cache,
         "keep_onnx": keep_onnx,
         "verbose": verbose,
-        "exportable": True,
     }
 
 

@@ -56,10 +56,6 @@ class TorchExportBackend(ExportBackend):
                 bool,
                 typer.Option(help="Load the saved .pt2 archive after export to validate it."),
             ] = True,
-            exportable: Annotated[
-                bool,
-                typer.Option(help="Use timm export-friendly layer variants when available."),
-            ] = True,
         ) -> None:
             validate_common_args(batch_size=batch_size, device=device)
             if dynamic_batch and batch_size < 2:
@@ -76,7 +72,6 @@ class TorchExportBackend(ExportBackend):
                 checkpoint=checkpoint,
                 num_classes=num_classes,
                 in_chans=in_chans,
-                exportable=exportable,
             )
             resolved_input_size = resolve_input_size(model, input_size)
 

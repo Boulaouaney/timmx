@@ -21,7 +21,6 @@ def _build_kwargs(output_path: Path, dynamic_batch: bool = False, batch_size: in
         "device": "cpu",
         "strict": False,
         "verify": True,
-        "exportable": True,
     }
 
 

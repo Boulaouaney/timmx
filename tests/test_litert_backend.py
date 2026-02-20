@@ -42,7 +42,6 @@ def _build_kwargs(
         "calibration_steps": calibration_steps,
         "nhwc_input": nhwc_input,
         "verify": verify,
-        "exportable": True,
     }
 
 

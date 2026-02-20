@@ -81,10 +81,6 @@ class LiteRTBackend(ExportBackend):
             verify: Annotated[
                 bool, typer.Option(help="Load and allocate the exported TFLite model.")
             ] = True,
-            exportable: Annotated[
-                bool,
-                typer.Option(help="Use timm export-friendly layer variants when available."),
-            ] = True,
         ) -> None:
             validate_common_args(batch_size=batch_size, device=device)
             int8_modes = {LiteRTMode.dynamic_int8, LiteRTMode.int8}
@@ -112,7 +108,6 @@ class LiteRTBackend(ExportBackend):
                 checkpoint=checkpoint,
                 num_classes=num_classes,
                 in_chans=in_chans,
-                exportable=exportable,
             )
             resolved_input_size = resolve_input_size(model, input_size)
 

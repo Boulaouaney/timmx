@@ -78,10 +78,6 @@ class CoreMLBackend(ExportBackend):
             verify: Annotated[
                 bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
             ] = True,
-            exportable: Annotated[
-                bool,
-                typer.Option(help="Use timm export-friendly layer variants when available."),
-            ] = True,
         ) -> None:
             validate_common_args(batch_size=batch_size, device=device)
             if dynamic_batch:
@@ -105,7 +101,6 @@ class CoreMLBackend(ExportBackend):
                 checkpoint=checkpoint,
                 num_classes=num_classes,
                 in_chans=in_chans,
-                exportable=exportable,
             )
             resolved_input_size = resolve_input_size(model, input_size)
 

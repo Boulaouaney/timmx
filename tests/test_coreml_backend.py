@@ -32,7 +32,6 @@ def _build_kwargs(
         "convert_to": convert_to,
         "compute_precision": compute_precision,
         "verify": verify,
-        "exportable": True,
     }
 
 

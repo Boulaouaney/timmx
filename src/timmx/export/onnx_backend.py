@@ -56,10 +56,6 @@ class OnnxBackend(ExportBackend):
                 bool, typer.Option(help="Save large model weights in external data files.")
             ] = False,
             check: Annotated[bool, typer.Option(help="Run ONNX checker after export.")] = True,
-            exportable: Annotated[
-                bool,
-                typer.Option(help="Use timm export-friendly layer variants when available."),
-            ] = True,
         ) -> None:
             validate_common_args(batch_size=batch_size, device=device)
             if opset < 7:
@@ -74,7 +70,6 @@ class OnnxBackend(ExportBackend):
                 checkpoint=checkpoint,
                 num_classes=num_classes,
                 in_chans=in_chans,
-                exportable=exportable,
             )
             resolved_input_size = resolve_input_size(model, input_size)
 

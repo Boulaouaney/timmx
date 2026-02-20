@@ -18,11 +18,10 @@ def create_timm_model(
     checkpoint: Path | None,
     num_classes: int | None,
     in_chans: int | None,
-    exportable: bool,
 ) -> torch.nn.Module:
     create_kwargs: dict[str, object] = {
         "pretrained": pretrained,
-        "exportable": exportable,
+        "exportable": True,
     }
 
     if checkpoint is not None:

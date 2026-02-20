@@ -111,10 +111,6 @@ class TensorRTBackend(ExportBackend):
             verbose: Annotated[
                 bool, typer.Option(help="Enable verbose TensorRT builder logging.")
             ] = False,
-            exportable: Annotated[
-                bool,
-                typer.Option(help="Use timm export-friendly layer variants when available."),
-            ] = True,
         ) -> None:
             validate_common_args(batch_size=batch_size, device=device)
 
@@ -161,7 +157,6 @@ class TensorRTBackend(ExportBackend):
                 checkpoint=checkpoint,
                 num_classes=num_classes,
                 in_chans=in_chans,
-                exportable=exportable,
             )
             resolved_input_size = resolve_input_size(model, input_size)
 
