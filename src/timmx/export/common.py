@@ -5,6 +5,7 @@ from pathlib import Path
 import timm
 import torch
 from timm.data import resolve_data_config
+from timm.utils import reparameterize_model
 
 from timmx.errors import ConfigurationError, ExportError
 
@@ -37,9 +38,12 @@ def create_timm_model(
         create_kwargs["in_chans"] = in_chans
 
     try:
-        return timm.create_model(model_name, **create_kwargs)
+        model = timm.create_model(model_name, **create_kwargs)
     except Exception as exc:
         raise ExportError(f"Failed to create timm model {model_name!r}: {exc}") from exc
+
+    reparameterize_model(model, inplace=True)
+    return model
 
 
 def resolve_input_size(
