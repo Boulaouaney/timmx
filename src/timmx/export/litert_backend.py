@@ -9,7 +9,7 @@ import torch
 import typer
 
 from timmx.errors import ConfigurationError, ExportError
-from timmx.export.base import ExportBackend
+from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
 from timmx.export.common import (
     BatchSizeOpt,
@@ -36,6 +36,18 @@ class LiteRTMode(StrEnum):
 class LiteRTBackend(ExportBackend):
     name = "litert"
     help = "Export a timm model to LiteRT/TFLite using litert-torch."
+
+    def check_dependencies(self) -> DependencyStatus:
+        missing = []
+        try:
+            import litert_torch  # noqa: F401
+        except ImportError:
+            missing.append("litert-torch")
+        return DependencyStatus(
+            available=not missing,
+            missing_packages=missing,
+            install_hint="pip install 'timmx[litert]'",
+        )
 
     def create_command(self) -> Callable[..., None]:
         def command(
@@ -210,7 +222,7 @@ def _verify_tflite_model(output_path: Path) -> None:
     except ImportError as exc:
         raise ExportError(
             "ai-edge-litert is required to verify LiteRT export. "
-            "Install dependencies with `uv sync`."
+            "Install with: pip install ai-edge-litert"
         ) from exc
 
     try:
@@ -225,7 +237,7 @@ def _import_litert_torch() -> object:
         import litert_torch
     except ImportError as exc:
         raise ExportError(
-            "litert-torch is required for LiteRT export. Install dependencies with `uv sync`."
+            "litert-torch is required for LiteRT export. Install with: pip install 'timmx[litert]'"
         ) from exc
     return litert_torch
 
@@ -236,6 +248,6 @@ def _import_tensorflow() -> object:
     except ImportError as exc:
         raise ExportError(
             "TensorFlow is required for LiteRT fp16 conversion flags. "
-            "Install dependencies with `uv sync`."
+            "Install with: pip install tensorflow"
         ) from exc
     return tensorflow

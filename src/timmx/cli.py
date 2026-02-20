@@ -5,6 +5,7 @@ import functools
 import typer
 
 from timmx import __version__
+from timmx.console import console
 from timmx.errors import TimmxError
 from timmx.export import BackendRegistry, create_builtin_registry
 
@@ -17,7 +18,7 @@ app.add_typer(export_app, name="export")
 
 def _version_callback(value: bool) -> None:
     if value:
-        print(f"timmx {__version__}")
+        console.print(f"timmx {__version__}")
         raise typer.Exit()
 
 
@@ -45,13 +46,56 @@ def build_export_app(registry: BackendRegistry | None = None) -> None:
             try:
                 _fn(*args, **kwargs)
             except TimmxError as exc:
-                typer.echo(f"error: {exc}", err=True)
+                console.print(f"[bold red]error:[/bold red] {exc}", highlight=False)
                 raise typer.Exit(code=2) from exc
 
         export_app.command(name=name, help=backend.help)(wrapped)
 
 
 build_export_app()
+
+
+@app.command()
+def doctor() -> None:
+    """Check timmx installation and backend availability."""
+    import platform
+
+    import torch
+    from rich.table import Table
+
+    console.print(f"[bold]timmx[/bold] v{__version__}")
+    console.print(f"Python {platform.python_version()} | torch {torch.__version__}")
+    console.print()
+
+    table = Table(title="Backends", show_lines=False)
+    table.add_column("Backend", style="bold")
+    table.add_column("Status")
+    table.add_column("Install")
+
+    registry = create_builtin_registry()
+    all_available = True
+
+    for name, backend in registry.items():
+        status = backend.check_dependencies()
+        if status.available:
+            table.add_row(name, "[green]\u2705 available[/green]", "")
+        else:
+            all_available = False
+            missing_str = ", ".join(status.missing_packages)
+            table.add_row(
+                name,
+                f"[red]\u274c missing[/red] ({missing_str})",
+                f"[dim]{status.install_hint}[/dim]",
+            )
+
+    console.print(table)
+
+    if not all_available:
+        console.print()
+        console.print(
+            "[dim]Tip: pip install 'timmx\\[all]' installs all"
+            " non-platform-specific backends.[/dim]"
+        )
 
 
 def main() -> None:

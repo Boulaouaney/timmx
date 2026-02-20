@@ -10,7 +10,7 @@ import torch
 import typer
 
 from timmx.errors import ConfigurationError, ExportError
-from timmx.export.base import ExportBackend
+from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
 from timmx.export.common import (
     BatchSizeOpt,
@@ -39,6 +39,18 @@ class TensorRTMode(StrEnum):
 class TensorRTBackend(ExportBackend):
     name = "tensorrt"
     help = "Export a timm model to a TensorRT engine via ONNX."
+
+    def check_dependencies(self) -> DependencyStatus:
+        missing = []
+        try:
+            import tensorrt  # noqa: F401
+        except ImportError:
+            missing.append("tensorrt")
+        return DependencyStatus(
+            available=not missing,
+            missing_packages=missing,
+            install_hint="pip install tensorrt",
+        )
 
     def create_command(self) -> Callable[..., None]:
         def command(
@@ -307,6 +319,6 @@ def _import_tensorrt() -> object:
     except ImportError as exc:
         raise ExportError(
             "tensorrt is required for TensorRT export. "
-            "Install with `uv pip install tensorrt` on a system with CUDA."
+            "Install with: pip install tensorrt (requires CUDA)"
         ) from exc
     return trt

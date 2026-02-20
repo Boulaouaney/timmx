@@ -1,5 +1,6 @@
 import pytest
 
+from timmx.export.base import DependencyStatus
 from timmx.export.coreml_backend import CoreMLBackend
 from timmx.export.litert_backend import LiteRTBackend
 from timmx.export.onnx_backend import OnnxBackend
@@ -25,6 +26,16 @@ def test_builtin_registry_contains_all_backends() -> None:
     assert isinstance(registry.get("tensorrt"), TensorRTBackend)
     assert isinstance(registry.get("torch-export"), TorchExportBackend)
     assert isinstance(registry.get("torchscript"), TorchScriptBackend)
+
+
+def test_all_backends_return_dependency_status() -> None:
+    registry = create_builtin_registry()
+    for name, backend in registry.items():
+        status = backend.check_dependencies()
+        assert isinstance(status, DependencyStatus), f"{name} returned wrong type"
+        assert isinstance(status.available, bool)
+        assert isinstance(status.missing_packages, list)
+        assert isinstance(status.install_hint, str)
 
 
 def test_registry_rejects_duplicate_backend_names() -> None:
