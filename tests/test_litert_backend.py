@@ -47,11 +47,11 @@ def _build_kwargs(
 
 def _patch_model_helpers(monkeypatch: pytest.MonkeyPatch, model: torch.nn.Module) -> None:
     monkeypatch.setattr(
-        "timmx.export.litert_backend.create_timm_model",
+        "timmx.export.common.create_timm_model",
         lambda *_args, **_kwargs: model,
     )
     monkeypatch.setattr(
-        "timmx.export.litert_backend.resolve_input_size",
+        "timmx.export.common.resolve_input_size",
         lambda _model, _requested: (3, 16, 16),
     )
 

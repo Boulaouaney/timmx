@@ -12,7 +12,18 @@ import typer
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
-from timmx.export.common import create_timm_model, resolve_input_size, validate_common_args
+from timmx.export.common import (
+    BatchSizeOpt,
+    CheckpointOpt,
+    DeviceOpt,
+    InChansOpt,
+    InputSizeOpt,
+    ModelNameArg,
+    NumClassesOpt,
+    OutputOpt,
+    PretrainedOpt,
+    prepare_export,
+)
 from timmx.export.types import Device
 
 DEFAULT_OPSET = 18
@@ -31,32 +42,15 @@ class TensorRTBackend(ExportBackend):
 
     def create_command(self) -> Callable[..., None]:
         def command(
-            model_name: Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")],
-            output: Annotated[
-                Path, typer.Option(help="Path to write the TensorRT engine (.engine).")
-            ],
-            checkpoint: Annotated[
-                Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")
-            ] = None,
-            pretrained: Annotated[
-                bool, typer.Option("--pretrained", help="Load timm pretrained weights.")
-            ] = False,
-            num_classes: Annotated[
-                int | None, typer.Option(help="Override the model classifier output classes.")
-            ] = None,
-            in_chans: Annotated[
-                int | None, typer.Option(help="Override model input channels.")
-            ] = None,
-            batch_size: Annotated[
-                int, typer.Option(help="Example input batch size for export and calibration.")
-            ] = 1,
-            input_size: Annotated[
-                tuple[int, int, int] | None,
-                typer.Option(help="Explicit input shape as C H W."),
-            ] = None,
-            device: Annotated[
-                Device, typer.Option(help="Device used for model instantiation and tracing.")
-            ] = Device.cuda,
+            model_name: ModelNameArg,
+            output: OutputOpt,
+            checkpoint: CheckpointOpt = None,
+            pretrained: PretrainedOpt = False,
+            num_classes: NumClassesOpt = None,
+            in_chans: InChansOpt = None,
+            batch_size: BatchSizeOpt = 1,
+            input_size: InputSizeOpt = None,
+            device: DeviceOpt = Device.cuda,
             mode: Annotated[
                 TensorRTMode, typer.Option(help="Engine precision mode.")
             ] = TensorRTMode.fp32,
@@ -112,8 +106,6 @@ class TensorRTBackend(ExportBackend):
                 bool, typer.Option(help="Enable verbose TensorRT builder logging.")
             ] = False,
         ) -> None:
-            validate_common_args(batch_size=batch_size, device=device)
-
             if device != Device.cuda:
                 raise ConfigurationError("TensorRT export requires --device cuda.")
 
@@ -148,32 +140,26 @@ class TensorRTBackend(ExportBackend):
 
             trt = _import_tensorrt()
 
-            output_path = Path(output).expanduser().resolve()
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            model = create_timm_model(
-                model_name,
-                pretrained=pretrained,
+            prep = prepare_export(
+                model_name=model_name,
+                output=output,
                 checkpoint=checkpoint,
+                pretrained=pretrained,
                 num_classes=num_classes,
                 in_chans=in_chans,
+                batch_size=batch_size,
+                input_size=input_size,
+                device=device,
             )
-            resolved_input_size = resolve_input_size(model, input_size)
-
-            torch_device = torch.device(device)
-            model = model.to(torch_device)
-            model.eval()
 
             onnx_path: Path
             temp_dir: tempfile.TemporaryDirectory[str] | None = None
 
             if keep_onnx:
-                onnx_path = output_path.with_suffix(".onnx")
+                onnx_path = prep.output_path.with_suffix(".onnx")
             else:
                 temp_dir = tempfile.TemporaryDirectory()
                 onnx_path = Path(temp_dir.name) / "model.onnx"
-
-            example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
 
             export_kwargs: dict[str, object] = {
                 "opset_version": opset,
@@ -189,8 +175,8 @@ class TensorRTBackend(ExportBackend):
 
             try:
                 torch.onnx.export(
-                    model,
-                    (example_input,),
+                    prep.model,
+                    (prep.example_input,),
                     f=str(onnx_path),
                     **export_kwargs,
                 )
@@ -226,16 +212,16 @@ class TensorRTBackend(ExportBackend):
                         calibration_steps=calibration_steps,
                         calibration_cache=calibration_cache,
                         batch_size=batch_size,
-                        input_size=resolved_input_size,
-                        device=torch_device,
+                        input_size=prep.resolved_input_size,
+                        device=prep.torch_device,
                     )
                     config.int8_calibrator = calibrator
 
                 if dynamic_batch:
                     profile = builder.create_optimization_profile()
-                    input_shape_min = (batch_min, *resolved_input_size)
-                    input_shape_opt = (batch_size, *resolved_input_size)
-                    input_shape_max = (batch_max, *resolved_input_size)
+                    input_shape_min = (batch_min, *prep.resolved_input_size)
+                    input_shape_opt = (batch_size, *prep.resolved_input_size)
+                    input_shape_max = (batch_max, *prep.resolved_input_size)
                     profile.set_shape("input", input_shape_min, input_shape_opt, input_shape_max)
                     config.add_optimization_profile(profile)
 
@@ -252,10 +238,10 @@ class TensorRTBackend(ExportBackend):
                     temp_dir.cleanup()
 
             try:
-                output_path.write_bytes(serialized_engine)
+                prep.output_path.write_bytes(serialized_engine)
             except Exception as exc:
                 raise ExportError(
-                    f"Failed to write TensorRT engine to {output_path}: {exc}"
+                    f"Failed to write TensorRT engine to {prep.output_path}: {exc}"
                 ) from exc
 
         return command
