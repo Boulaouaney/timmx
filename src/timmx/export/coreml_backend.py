@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from timmx.errors import ConfigurationError, ExportError
-from timmx.export.base import ExportBackend
+from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
     BatchSizeOpt,
     CheckpointOpt,
@@ -36,6 +36,18 @@ class ComputePrecision(StrEnum):
 class CoreMLBackend(ExportBackend):
     name = "coreml"
     help = "Export a timm model to Core ML."
+
+    def check_dependencies(self) -> DependencyStatus:
+        missing = []
+        try:
+            import coremltools  # noqa: F401
+        except ImportError:
+            missing.append("coremltools")
+        return DependencyStatus(
+            available=not missing,
+            missing_packages=missing,
+            install_hint="pip install 'timmx[coreml]'",
+        )
 
     def create_command(self) -> Callable[..., None]:
         def command(
@@ -173,6 +185,6 @@ def _import_coremltools() -> object:
         import coremltools as ct
     except ImportError as exc:
         raise ExportError(
-            "coremltools is required for Core ML export. Install dependencies with `uv sync`."
+            "coremltools is required for Core ML export. Install with: pip install 'timmx[coreml]'"
         ) from exc
     return ct

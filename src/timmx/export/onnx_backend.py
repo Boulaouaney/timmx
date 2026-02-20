@@ -7,7 +7,7 @@ import torch
 import typer
 
 from timmx.errors import ConfigurationError, ExportError
-from timmx.export.base import ExportBackend
+from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
     BatchSizeOpt,
     CheckpointOpt,
@@ -28,6 +28,19 @@ DEFAULT_OPSET = 18
 class OnnxBackend(ExportBackend):
     name = "onnx"
     help = "Export a timm model to ONNX."
+
+    def check_dependencies(self) -> DependencyStatus:
+        missing = []
+        for mod in ("onnx", "onnxscript"):
+            try:
+                __import__(mod)
+            except ImportError:
+                missing.append(mod)
+        return DependencyStatus(
+            available=not missing,
+            missing_packages=missing,
+            install_hint="pip install 'timmx[onnx]'",
+        )
 
     def create_command(self) -> Callable[..., None]:
         def command(
@@ -85,7 +98,13 @@ class OnnxBackend(ExportBackend):
                 raise ExportError(f"ONNX export failed: {exc}") from exc
 
             if check:
-                import onnx
+                try:
+                    import onnx
+                except ImportError as exc:
+                    raise ExportError(
+                        "onnx is required for ONNX model checking. "
+                        "Install with: pip install 'timmx[onnx]'"
+                    ) from exc
 
                 try:
                     onnx.checker.check_model(str(prep.output_path))

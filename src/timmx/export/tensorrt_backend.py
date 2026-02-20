@@ -9,8 +9,9 @@ from typing import Annotated
 import torch
 import typer
 
+from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
-from timmx.export.base import ExportBackend
+from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
 from timmx.export.common import (
     BatchSizeOpt,
@@ -39,6 +40,18 @@ class TensorRTMode(StrEnum):
 class TensorRTBackend(ExportBackend):
     name = "tensorrt"
     help = "Export a timm model to a TensorRT engine via ONNX."
+
+    def check_dependencies(self) -> DependencyStatus:
+        missing = []
+        try:
+            import tensorrt  # noqa: F401
+        except ImportError:
+            missing.append("tensorrt")
+        return DependencyStatus(
+            available=not missing,
+            missing_packages=missing,
+            install_hint="pip install tensorrt",
+        )
 
     def create_command(self) -> Callable[..., None]:
         def command(
@@ -160,6 +173,8 @@ class TensorRTBackend(ExportBackend):
             else:
                 temp_dir = tempfile.TemporaryDirectory()
                 onnx_path = Path(temp_dir.name) / "model.onnx"
+
+            _warn_if_missing_onnxscript()
 
             export_kwargs: dict[str, object] = {
                 "opset_version": opset,
@@ -301,12 +316,25 @@ def _create_calibrator(
     return calibrator_cls(batches=batches, cache_path=cache_path)
 
 
+def _warn_if_missing_onnxscript() -> None:
+    try:
+        import onnxscript  # noqa: F401
+    except ImportError:
+        console.print(
+            "[yellow]warning:[/yellow] onnxscript is not installed. "
+            "The ONNX intermediate export will fall back to the legacy TorchScript-based "
+            "exporter, which is deprecated. Install with: pip install 'timmx[onnx]'",
+            highlight=False,
+            stderr=True,
+        )
+
+
 def _import_tensorrt() -> object:
     try:
         import tensorrt as trt
     except ImportError as exc:
         raise ExportError(
             "tensorrt is required for TensorRT export. "
-            "Install with `uv pip install tensorrt` on a system with CUDA."
+            "Install with: pip install tensorrt (requires CUDA)"
         ) from exc
     return trt

@@ -17,6 +17,12 @@ def test_version_flag() -> None:
     assert "timmx" in result.output
 
 
+def test_root_help_mentions_doctor() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "doctor" in result.output
+
+
 def test_export_help_lists_backends() -> None:
     result = runner.invoke(app, ["export", "--help"])
     assert result.exit_code == 0

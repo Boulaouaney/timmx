@@ -33,17 +33,19 @@ Current built-in backends:
 ## Project Layout
 
 - Source package: `src/timmx/`
-- Export backend interface: `src/timmx/export/base.py`
+- Export backend interface: `src/timmx/export/base.py` (`ExportBackend` ABC, `DependencyStatus`)
 - Backend registry: `src/timmx/export/registry.py`
 - Backend implementations: `src/timmx/export/<format>_backend.py`
 - Shared model helpers: `src/timmx/export/common.py`
-- CLI entrypoint: `src/timmx/cli.py`
+- Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
+- CLI entrypoint: `src/timmx/cli.py` (includes `doctor` diagnostic command)
 - Tests: `tests/`
 
 ## Backend Design Contract
 
 Every backend must:
 - Implement `ExportBackend` (`name`, `help`, `create_command`)
+- If the backend has optional dependencies, override `check_dependencies()` returning `DependencyStatus`
 - `create_command()` returns a Typer-compatible function with `Annotated` type parameters
 - Own all format-specific CLI flags (as Typer-annotated params) in its own module
 - Raise `timmx.errors.TimmxError` subclasses for user-facing failures (the CLI wrapper catches these and exits with code 2)
@@ -60,7 +62,7 @@ Runtime nuance:
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
 - For `litert` quantized modes, calibration data can be provided via `--calibration-data` as a
   torch-saved tensor with shape `(N, C, H, W)`.
-- For `tensorrt`, `--device cuda` and the `tensorrt` pip package are required (not in core deps).
+- For `tensorrt`, `--device cuda` and `pip install tensorrt` are required (Linux/Windows with CUDA only).
 - For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
@@ -71,25 +73,34 @@ Runtime nuance:
 
 1. Create `src/timmx/export/<format>_backend.py`.
 2. Implement `ExportBackend` with `create_command()` returning a Typer-compatible function.
-3. Register the backend in `create_builtin_registry()` in
+3. If the backend has optional dependencies, override `check_dependencies()` returning
+   `DependencyStatus` and add the extra to `[project.optional-dependencies]` in `pyproject.toml`.
+4. Register the backend in `create_builtin_registry()` in
    `src/timmx/export/registry.py`.
-4. Add tests:
+5. Add tests:
    - CLI help output coverage (via `typer.testing.CliRunner`)
    - Registry coverage
    - At least one end-to-end export smoke test calling `backend.create_command()(**kwargs)`
-5. Update `README.md` format support and usage examples.
+6. Update `README.md` format support and usage examples.
 
 ## Quality Gates Before Shipping
 
 Run these from repo root:
 
 ```bash
-uv sync --group dev
+uv sync --all-extras --group dev
 uvx ruff format .
 uvx ruff check .
 uv run pytest
 uv build
 ```
+
+## Dependencies
+
+Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
+deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`. TensorRT
+cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
+directly with `pip install tensorrt`. The `all` extra installs `onnx + coreml + litert`.
 
 ## Scope Discipline
 
