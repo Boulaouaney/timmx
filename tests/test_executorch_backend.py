@@ -97,3 +97,37 @@ def test_export_xnnpack_fp32(tmp_path: Path) -> None:
     command(**_build_kwargs(output))
     assert output.exists()
     assert output.stat().st_size > 0
+
+
+@requires_executorch
+def test_export_xnnpack_dynamic_batch(tmp_path: Path) -> None:
+    output = tmp_path / "model_dynamic.pte"
+    backend = ExecuTorchBackend()
+    command = backend.create_command()
+    command(**_build_kwargs(output, dynamic_batch=True, batch_size=2))
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+# CoreML delegate tests require macOS + executorch CoreML support
+try:
+    from executorch.backends.apple.coreml.partition import CoreMLPartitioner  # noqa: F401
+
+    _has_coreml_delegate = True
+except (ImportError, ModuleNotFoundError):
+    _has_coreml_delegate = False
+
+requires_coreml_delegate = pytest.mark.skipif(
+    not (_has_executorch and _has_coreml_delegate),
+    reason="executorch CoreML delegate not available",
+)
+
+
+@requires_coreml_delegate
+def test_export_coreml_fp32(tmp_path: Path) -> None:
+    output = tmp_path / "model_coreml.pte"
+    backend = ExecuTorchBackend()
+    command = backend.create_command()
+    command(**_build_kwargs(output, delegate="coreml"))
+    assert output.exists()
+    assert output.stat().st_size > 0
