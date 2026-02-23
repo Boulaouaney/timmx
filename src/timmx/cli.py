@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import functools
+import logging
+import os
+import warnings
 
 import typer
 
 from timmx import __version__
 from timmx.console import console
 from timmx.errors import TimmxError
-from timmx.export import BackendRegistry, create_builtin_registry
+from timmx.export import BackendRegistry, DependencyStatus, create_builtin_registry
+from timmx.export.base import ExportBackend
 
 app = typer.Typer(
     name="timmx", help="Export timm models to deployment formats.", no_args_is_help=True
@@ -55,6 +59,24 @@ def build_export_app(registry: BackendRegistry | None = None) -> None:
 build_export_app()
 
 
+def _quiet_check(backend: ExportBackend) -> DependencyStatus:
+    """Run check_dependencies with noisy third-party warnings suppressed."""
+    prev_tf = os.environ.get("TF_CPP_MIN_LOG_LEVEL")
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    prev_level = logging.root.level
+    logging.root.setLevel(logging.ERROR)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return backend.check_dependencies()
+    finally:
+        logging.root.setLevel(prev_level)
+        if prev_tf is None:
+            os.environ.pop("TF_CPP_MIN_LOG_LEVEL", None)
+        else:
+            os.environ["TF_CPP_MIN_LOG_LEVEL"] = prev_tf
+
+
 @app.command()
 def doctor() -> None:
     """Check timmx installation and backend availability."""
@@ -76,16 +98,16 @@ def doctor() -> None:
     all_available = True
 
     for name, backend in registry.items():
-        status = backend.check_dependencies()
+        status = _quiet_check(backend)
         if status.available:
-            table.add_row(name, "[green]\u2705 available[/green]", "")
+            table.add_row(name, "[green]:white_check_mark: available[/green]", "")
         else:
             all_available = False
             missing_str = ", ".join(status.missing_packages)
             table.add_row(
                 name,
-                f"[red]\u274c missing[/red] ({missing_str})",
-                f"[dim]{status.install_hint}[/dim]",
+                f"[red]:x: missing[/red] ({missing_str})",
+                "[dim]{}[/dim]".format(status.install_hint.replace("[", r"\[")),
             )
 
     console.print(table)
