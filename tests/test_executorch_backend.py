@@ -12,6 +12,7 @@ def _build_kwargs(
     *,
     delegate: str = "xnnpack",
     mode: str = "fp32",
+    compute_precision: str | None = None,
     batch_size: int = 1,
     dynamic_batch: bool = False,
     calibration_data: Path | None = None,
@@ -30,6 +31,7 @@ def _build_kwargs(
         "device": "cpu",
         "delegate": delegate,
         "mode": mode,
+        "compute_precision": compute_precision,
         "dynamic_batch": dynamic_batch,
         "calibration_data": calibration_data,
         "calibration_steps": calibration_steps,
@@ -42,18 +44,13 @@ def _build_kwargs(
 # ---------------------------------------------------------------------------
 
 
-def test_rejects_fp16_with_xnnpack(tmp_path: Path) -> None:
+def test_rejects_compute_precision_with_xnnpack(tmp_path: Path) -> None:
     backend = ExecuTorchBackend()
     command = backend.create_command()
-    with pytest.raises(ConfigurationError, match="--mode fp16.*--delegate coreml"):
-        command(**_build_kwargs(tmp_path / "m.pte", mode="fp16", delegate="xnnpack"))
-
-
-def test_rejects_int8_with_coreml(tmp_path: Path) -> None:
-    backend = ExecuTorchBackend()
-    command = backend.create_command()
-    with pytest.raises(ConfigurationError, match="--mode int8.*--delegate xnnpack"):
-        command(**_build_kwargs(tmp_path / "m.pte", mode="int8", delegate="coreml"))
+    with pytest.raises(ConfigurationError, match="--compute-precision.*--delegate coreml"):
+        command(
+            **_build_kwargs(tmp_path / "m.pte", delegate="xnnpack", compute_precision="float16")
+        )
 
 
 def test_rejects_calibration_args_without_int8(tmp_path: Path) -> None:
@@ -109,35 +106,6 @@ def test_export_xnnpack_dynamic_batch(tmp_path: Path) -> None:
     assert output.stat().st_size > 0
 
 
-# CoreML delegate tests require macOS + executorch CoreML support
-try:
-    from executorch.backends.apple.coreml.partition import CoreMLPartitioner  # noqa: F401
-
-    _has_coreml_delegate = True
-except (ImportError, ModuleNotFoundError):
-    _has_coreml_delegate = False
-
-requires_coreml_delegate = pytest.mark.skipif(
-    not (_has_executorch and _has_coreml_delegate),
-    reason="executorch CoreML delegate not available",
-)
-
-
-@requires_coreml_delegate
-def test_export_coreml_fp32(tmp_path: Path) -> None:
-    output = tmp_path / "model_coreml.pte"
-    backend = ExecuTorchBackend()
-    command = backend.create_command()
-    command(**_build_kwargs(output, delegate="coreml"))
-    assert output.exists()
-    assert output.stat().st_size > 0
-
-
-# ---------------------------------------------------------------------------
-# INT8 quantization tests
-# ---------------------------------------------------------------------------
-
-
 @requires_executorch
 def test_export_xnnpack_int8(tmp_path: Path) -> None:
     output = tmp_path / "model_int8.pte"
@@ -161,5 +129,66 @@ def test_export_xnnpack_int8_with_calibration_data(tmp_path: Path) -> None:
             output, mode="int8", calibration_data=cal, calibration_steps=2, batch_size=2
         )
     )
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# CoreML delegate tests (require macOS + executorch CoreML support)
+# ---------------------------------------------------------------------------
+
+try:
+    from executorch.backends.apple.coreml.partition import CoreMLPartitioner  # noqa: F401
+
+    _has_coreml_delegate = True
+except (ImportError, ModuleNotFoundError):
+    _has_coreml_delegate = False
+
+requires_coreml_delegate = pytest.mark.skipif(
+    not (_has_executorch and _has_coreml_delegate),
+    reason="executorch CoreML delegate not available",
+)
+
+
+@requires_coreml_delegate
+def test_export_coreml_default(tmp_path: Path) -> None:
+    output = tmp_path / "model_coreml.pte"
+    backend = ExecuTorchBackend()
+    command = backend.create_command()
+    command(**_build_kwargs(output, delegate="coreml"))
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+@requires_coreml_delegate
+def test_export_coreml_fp32_precision(tmp_path: Path) -> None:
+    output = tmp_path / "model_coreml_fp32.pte"
+    backend = ExecuTorchBackend()
+    command = backend.create_command()
+    command(**_build_kwargs(output, delegate="coreml", compute_precision="float32"))
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+# CoreML int8 quantization needs CoreMLQuantizer
+try:
+    from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer  # noqa: F401
+
+    _has_coreml_quantizer = True
+except (ImportError, ModuleNotFoundError):
+    _has_coreml_quantizer = False
+
+requires_coreml_quantizer = pytest.mark.skipif(
+    not (_has_executorch and _has_coreml_delegate and _has_coreml_quantizer),
+    reason="executorch CoreML quantizer not available",
+)
+
+
+@requires_coreml_quantizer
+def test_export_coreml_int8(tmp_path: Path) -> None:
+    output = tmp_path / "model_coreml_int8.pte"
+    backend = ExecuTorchBackend()
+    command = backend.create_command()
+    command(**_build_kwargs(output, delegate="coreml", mode="int8"))
     assert output.exists()
     assert output.stat().st_size > 0

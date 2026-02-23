@@ -41,6 +41,7 @@ def test_export_executorch_help_shows_options() -> None:
     assert "--output" in result.output
     assert "--delegate" in result.output
     assert "--mode" in result.output
+    assert "compute-preci" in result.output
     assert "--dynamic-batch" in result.output
     assert "--calibration-d" in result.output
     assert "--per-channel" in result.output

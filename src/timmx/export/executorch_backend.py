@@ -33,8 +33,12 @@ class ExecuTorchDelegate(StrEnum):
 
 class ExecuTorchMode(StrEnum):
     fp32 = "fp32"
-    fp16 = "fp16"
     int8 = "int8"
+
+
+class ComputePrecision(StrEnum):
+    float16 = "float16"
+    float32 = "float32"
 
 
 class ExecuTorchBackend(ExportBackend):
@@ -69,8 +73,13 @@ class ExecuTorchBackend(ExportBackend):
                 typer.Option(help="ExecuTorch delegate backend for hardware acceleration."),
             ] = ExecuTorchDelegate.xnnpack,
             mode: Annotated[
-                ExecuTorchMode, typer.Option(help="Export precision mode.")
+                ExecuTorchMode,
+                typer.Option(help="Export precision mode."),
             ] = ExecuTorchMode.fp32,
+            compute_precision: Annotated[
+                ComputePrecision | None,
+                typer.Option(help="CoreML compute precision. Only valid with --delegate coreml."),
+            ] = None,
             dynamic_batch: Annotated[
                 bool,
                 typer.Option("--dynamic-batch", help="Mark batch axis as dynamic."),
@@ -78,21 +87,12 @@ class ExecuTorchBackend(ExportBackend):
             calibration_data: Annotated[
                 Path | None,
                 typer.Option(
-                    help=(
-                        "Path to a torch-saved calibration tensor with shape (N, C, H, W). "
-                        "Required for --mode int8 unless random calibration is acceptable."
-                    )
+                    help="Path to a torch-saved calibration tensor (N, C, H, W) for int8."
                 ),
             ] = None,
             calibration_steps: Annotated[
                 int | None,
-                typer.Option(
-                    help=(
-                        "Number of calibration batches. "
-                        "Defaults to 1 random batch when --calibration-data is not set, "
-                        "or all full batches from --calibration-data when set."
-                    )
-                ),
+                typer.Option(help="Number of calibration batches for int8 quantization."),
             ] = None,
             per_channel: Annotated[
                 bool,
@@ -102,10 +102,10 @@ class ExecuTorchBackend(ExportBackend):
                 ),
             ] = True,
         ) -> None:
-            if mode == ExecuTorchMode.fp16 and delegate != ExecuTorchDelegate.coreml:
-                raise ConfigurationError("--mode fp16 is only supported with --delegate coreml.")
-            if mode == ExecuTorchMode.int8 and delegate != ExecuTorchDelegate.xnnpack:
-                raise ConfigurationError("--mode int8 is only supported with --delegate xnnpack.")
+            if compute_precision is not None and delegate != ExecuTorchDelegate.coreml:
+                raise ConfigurationError(
+                    "--compute-precision is only supported with --delegate coreml."
+                )
             if mode != ExecuTorchMode.int8 and (
                 calibration_data is not None or calibration_steps is not None
             ):
@@ -131,7 +131,11 @@ class ExecuTorchBackend(ExportBackend):
                 device=device,
             )
 
-            partitioner = _build_partitioner(delegate=delegate)
+            partitioner = _build_partitioner(
+                delegate=delegate,
+                compute_precision=compute_precision,
+                quantized=mode == ExecuTorchMode.int8,
+            )
 
             if mode == ExecuTorchMode.int8:
                 et_program = _export_quantized(
@@ -144,6 +148,7 @@ class ExecuTorchBackend(ExportBackend):
                     calibration_steps=calibration_steps,
                     per_channel=per_channel,
                     dynamic_batch=dynamic_batch,
+                    delegate=delegate,
                     partitioner=partitioner,
                 )
             else:
@@ -209,12 +214,9 @@ def _export_quantized(
     calibration_steps: int | None,
     per_channel: bool,
     dynamic_batch: bool,
+    delegate: ExecuTorchDelegate,
     partitioner: list[object],
 ) -> object:
-    from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
-        XNNPACKQuantizer,
-        get_symmetric_quantization_config,
-    )
     from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
     from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -226,16 +228,10 @@ def _export_quantized(
         device=torch_device,
     )
 
+    quantizer = _build_quantizer(delegate=delegate, per_channel=per_channel)
+
     try:
         exported_module = torch.export.export(model, (example_input,)).module()
-
-        quantizer = XNNPACKQuantizer()
-        quantizer.set_global(
-            get_symmetric_quantization_config(
-                is_per_channel=per_channel,
-                is_dynamic=False,
-            )
-        )
 
         prepared = prepare_pt2e(exported_module, quantizer)
 
@@ -272,7 +268,46 @@ def _export_quantized(
     return et_program
 
 
-def _build_partitioner(*, delegate: ExecuTorchDelegate) -> list[object]:
+def _build_quantizer(*, delegate: ExecuTorchDelegate, per_channel: bool) -> object:
+    if delegate == ExecuTorchDelegate.xnnpack:
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            XNNPACKQuantizer,
+            get_symmetric_quantization_config,
+        )
+
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(
+            get_symmetric_quantization_config(
+                is_per_channel=per_channel,
+                is_dynamic=False,
+            )
+        )
+        return quantizer
+
+    if delegate == ExecuTorchDelegate.coreml:
+        from coremltools.optimize.torch.quantization import LinearQuantizerConfig
+        from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
+
+        config = LinearQuantizerConfig.from_dict(
+            {
+                "global_config": {
+                    "weight_dtype": "qint8",
+                    "activation_dtype": "quint8",
+                    "weight_per_channel": per_channel,
+                }
+            }
+        )
+        return CoreMLQuantizer(config)
+
+    raise ConfigurationError(f"Unknown delegate: {delegate}")
+
+
+def _build_partitioner(
+    *,
+    delegate: ExecuTorchDelegate,
+    compute_precision: ComputePrecision | None,
+    quantized: bool = False,
+) -> list[object]:
     if delegate == ExecuTorchDelegate.xnnpack:
         try:
             from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -293,9 +328,36 @@ def _build_partitioner(*, delegate: ExecuTorchDelegate) -> list[object]:
                 "CoreMLPartitioner is required for --delegate coreml. "
                 "Ensure executorch is installed with CoreML support (macOS only)."
             ) from exc
+
+        compile_specs = _build_coreml_compile_specs(compute_precision, quantized=quantized)
+        if compile_specs is not None:
+            return [CoreMLPartitioner(compile_specs=compile_specs)]
         return [CoreMLPartitioner()]
 
     raise ConfigurationError(f"Unknown delegate: {delegate}")
+
+
+def _build_coreml_compile_specs(
+    compute_precision: ComputePrecision | None,
+    *,
+    quantized: bool = False,
+) -> list[object] | None:
+    if compute_precision is None and not quantized:
+        return None
+
+    import coremltools as ct
+    from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+    kwargs: dict[str, object] = {}
+    if compute_precision is not None:
+        kwargs["compute_precision"] = (
+            ct.precision.FLOAT32
+            if compute_precision == ComputePrecision.float32
+            else ct.precision.FLOAT16
+        )
+    if quantized:
+        kwargs["minimum_deployment_target"] = ct.target.iOS17
+    return CoreMLBackend.generate_compile_specs(**kwargs)
 
 
 def _import_executorch() -> None:
