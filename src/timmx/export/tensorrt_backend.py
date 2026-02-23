@@ -9,7 +9,6 @@ from typing import Annotated
 import torch
 import typer
 
-from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
@@ -47,10 +46,19 @@ class TensorRTBackend(ExportBackend):
             import tensorrt  # noqa: F401
         except ImportError:
             missing.append("tensorrt")
+        try:
+            import onnxscript  # noqa: F401
+        except ImportError:
+            missing.append("onnxscript")
+        hints = []
+        if "tensorrt" in missing:
+            hints.append("pip install tensorrt")
+        if "onnxscript" in missing:
+            hints.append("pip install 'timmx[onnx]'")
         return DependencyStatus(
             available=not missing,
             missing_packages=missing,
-            install_hint="pip install tensorrt",
+            install_hint=" && ".join(hints) if hints else "",
         )
 
     def create_command(self) -> Callable[..., None]:
@@ -174,7 +182,7 @@ class TensorRTBackend(ExportBackend):
                 temp_dir = tempfile.TemporaryDirectory()
                 onnx_path = Path(temp_dir.name) / "model.onnx"
 
-            _warn_if_missing_onnxscript()
+            _require_onnxscript()
 
             export_kwargs: dict[str, object] = {
                 "opset_version": opset,
@@ -316,16 +324,14 @@ def _create_calibrator(
     return calibrator_cls(batches=batches, cache_path=cache_path)
 
 
-def _warn_if_missing_onnxscript() -> None:
+def _require_onnxscript() -> None:
     try:
         import onnxscript  # noqa: F401
-    except ImportError:
-        console.print(
-            "[yellow]warning:[/yellow] onnxscript is not installed. "
-            "The ONNX intermediate export will fall back to the legacy TorchScript-based "
-            "exporter, which is deprecated. Install with: pip install 'timmx[onnx]'",
-            highlight=False,
-        )
+    except ImportError as exc:
+        raise ExportError(
+            "onnxscript is required for TensorRT export (dynamo-based ONNX export). "
+            "Install with: pip install 'timmx[onnx]'"
+        ) from exc
 
 
 def _import_tensorrt() -> object:

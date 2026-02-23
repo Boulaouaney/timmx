@@ -195,9 +195,22 @@ requires_tensorrt = pytest.mark.skipif(
     reason="tensorrt package not installed",
 )
 
+try:
+    import onnxscript as _onnxscript  # noqa: F401
+
+    _has_onnxscript = True
+except ImportError:
+    _has_onnxscript = False
+
+requires_onnxscript = pytest.mark.skipif(
+    not _has_onnxscript,
+    reason="onnxscript package not installed",
+)
+
 
 @requires_cuda
 @requires_tensorrt
+@requires_onnxscript
 def test_export_tensorrt_fp32(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
     kwargs = _build_kwargs(output_path, mode="fp32")
@@ -213,6 +226,7 @@ def test_export_tensorrt_fp32(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 @requires_cuda
 @requires_tensorrt
+@requires_onnxscript
 def test_export_tensorrt_fp16(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
     kwargs = _build_kwargs(output_path, mode="fp16")
@@ -228,6 +242,7 @@ def test_export_tensorrt_fp16(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 @requires_cuda
 @requires_tensorrt
+@requires_onnxscript
 def test_export_tensorrt_dynamic_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
     kwargs = _build_kwargs(
@@ -250,6 +265,7 @@ def test_export_tensorrt_dynamic_batch(tmp_path: Path, monkeypatch: pytest.Monke
 
 @requires_cuda
 @requires_tensorrt
+@requires_onnxscript
 def test_export_tensorrt_int8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
     kwargs = _build_kwargs(output_path, mode="int8")
@@ -265,6 +281,7 @@ def test_export_tensorrt_int8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 @requires_cuda
 @requires_tensorrt
+@requires_onnxscript
 def test_export_tensorrt_keep_onnx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
     kwargs = _build_kwargs(output_path, keep_onnx=True)

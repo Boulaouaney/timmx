@@ -62,7 +62,8 @@ Runtime nuance:
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
 - For `litert` quantized modes, calibration data can be provided via `--calibration-data` as a
   torch-saved tensor with shape `(N, C, H, W)`.
-- For `tensorrt`, `--device cuda` and `pip install tensorrt` are required (Linux/Windows with CUDA only).
+- For `tensorrt`, `--device cuda`, `pip install tensorrt`, and `onnxscript` (via `pip install 'timmx[onnx]'`)
+  are required. TensorRT export uses dynamo-based ONNX as an intermediate step.
 - For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.

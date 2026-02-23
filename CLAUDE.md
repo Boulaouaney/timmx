@@ -68,6 +68,6 @@ Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependenci
 
 - **coreml**: `--compute-precision` is only valid with `--convert-to mlprogram`
 - **litert**: quantization modes are `fp32`, `fp16`, `dynamic-int8`, `int8`; `--calibration-data` expects a torch-saved tensor of shape `(N, C, H, W)`; `--nhwc-input` exposes channel-last input layout
-- **tensorrt**: requires `--device cuda` and `pip install tensorrt` (Linux/Windows with CUDA only); ONNX intermediate export uses `external_data=False` to embed weights inline; `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for dynamic shape capture; quantization modes are `fp32`, `fp16`, `int8`
+- **tensorrt**: requires `--device cuda`, `pip install tensorrt` (Linux/Windows with CUDA only), and `onnxscript` (install via `pip install 'timmx[onnx]'`) for dynamo-based ONNX intermediate export; `external_data=False` embeds weights inline; `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for dynamic shape capture; quantization modes are `fp32`, `fp16`, `int8`
 - **torch-export**: dynamic batch capture requires `--batch-size >= 2` for stable symbolic shapes
 - **torchscript**: `--method` selects `trace` (default, recommended) or `script`
