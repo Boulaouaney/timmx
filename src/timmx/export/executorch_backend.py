@@ -270,10 +270,16 @@ def _export_quantized(
 
 def _build_quantizer(*, delegate: ExecuTorchDelegate, per_channel: bool) -> object:
     if delegate == ExecuTorchDelegate.xnnpack:
-        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
-            XNNPACKQuantizer,
-            get_symmetric_quantization_config,
-        )
+        try:
+            from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+                XNNPACKQuantizer,
+                get_symmetric_quantization_config,
+            )
+        except ImportError as exc:
+            raise ExportError(
+                "XNNPACKQuantizer is required for --mode int8 --delegate xnnpack. "
+                "Install with: pip install 'timmx[executorch]'"
+            ) from exc
 
         quantizer = XNNPACKQuantizer()
         quantizer.set_global(
@@ -285,8 +291,14 @@ def _build_quantizer(*, delegate: ExecuTorchDelegate, per_channel: bool) -> obje
         return quantizer
 
     if delegate == ExecuTorchDelegate.coreml:
-        from coremltools.optimize.torch.quantization import LinearQuantizerConfig
-        from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
+        try:
+            from coremltools.optimize.torch.quantization import LinearQuantizerConfig
+            from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
+        except ImportError as exc:
+            raise ExportError(
+                "CoreMLQuantizer and coremltools are required for --mode int8 --delegate coreml. "
+                "Install with: pip install 'timmx[executorch]' coremltools"
+            ) from exc
 
         config = LinearQuantizerConfig.from_dict(
             {
