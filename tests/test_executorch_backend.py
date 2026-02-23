@@ -131,3 +131,35 @@ def test_export_coreml_fp32(tmp_path: Path) -> None:
     command(**_build_kwargs(output, delegate="coreml"))
     assert output.exists()
     assert output.stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# INT8 quantization tests
+# ---------------------------------------------------------------------------
+
+
+@requires_executorch
+def test_export_xnnpack_int8(tmp_path: Path) -> None:
+    output = tmp_path / "model_int8.pte"
+    backend = ExecuTorchBackend()
+    command = backend.create_command()
+    command(**_build_kwargs(output, mode="int8"))
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+@requires_executorch
+def test_export_xnnpack_int8_with_calibration_data(tmp_path: Path) -> None:
+    cal = tmp_path / "calibration.pt"
+    torch.save(torch.randn(8, 3, 32, 32), cal)
+
+    output = tmp_path / "model_int8_cal.pte"
+    backend = ExecuTorchBackend()
+    command = backend.create_command()
+    command(
+        **_build_kwargs(
+            output, mode="int8", calibration_data=cal, calibration_steps=2, batch_size=2
+        )
+    )
+    assert output.exists()
+    assert output.stat().st_size > 0
