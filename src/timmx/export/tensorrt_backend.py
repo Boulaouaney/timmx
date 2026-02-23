@@ -10,7 +10,7 @@ import torch
 import typer
 
 from timmx.errors import ConfigurationError, ExportError
-from timmx.export.base import ExportBackend
+from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
 from timmx.export.common import (
     BatchSizeOpt,
@@ -39,6 +39,27 @@ class TensorRTMode(StrEnum):
 class TensorRTBackend(ExportBackend):
     name = "tensorrt"
     help = "Export a timm model to a TensorRT engine via ONNX."
+
+    def check_dependencies(self) -> DependencyStatus:
+        missing = []
+        try:
+            import tensorrt  # noqa: F401
+        except ImportError:
+            missing.append("tensorrt")
+        try:
+            import onnxscript  # noqa: F401
+        except ImportError:
+            missing.append("onnxscript")
+        hints = []
+        if "tensorrt" in missing:
+            hints.append("pip install tensorrt")
+        if "onnxscript" in missing:
+            hints.append("pip install 'timmx[onnx]'")
+        return DependencyStatus(
+            available=not missing,
+            missing_packages=missing,
+            install_hint=" && ".join(hints) if hints else "",
+        )
 
     def create_command(self) -> Callable[..., None]:
         def command(
@@ -160,6 +181,8 @@ class TensorRTBackend(ExportBackend):
             else:
                 temp_dir = tempfile.TemporaryDirectory()
                 onnx_path = Path(temp_dir.name) / "model.onnx"
+
+            _require_onnxscript()
 
             export_kwargs: dict[str, object] = {
                 "opset_version": opset,
@@ -301,12 +324,22 @@ def _create_calibrator(
     return calibrator_cls(batches=batches, cache_path=cache_path)
 
 
+def _require_onnxscript() -> None:
+    try:
+        import onnxscript  # noqa: F401
+    except ImportError as exc:
+        raise ExportError(
+            "onnxscript is required for TensorRT export (dynamo-based ONNX export). "
+            "Install with: pip install 'timmx[onnx]'"
+        ) from exc
+
+
 def _import_tensorrt() -> object:
     try:
         import tensorrt as trt
     except ImportError as exc:
         raise ExportError(
             "tensorrt is required for TensorRT export. "
-            "Install with `uv pip install tensorrt` on a system with CUDA."
+            "Install with: pip install tensorrt (requires CUDA)"
         ) from exc
     return trt
