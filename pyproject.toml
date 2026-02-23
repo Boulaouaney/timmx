@@ -15,6 +15,7 @@ dependencies = [
 onnx = ["onnx==1.20.1", "onnxscript==0.6.2"]
 coreml = ["coremltools==9.0"]
 litert = ["litert-torch==0.8.0"]
+executorch = ["executorch>=1.1.0"]
 all = ["timmx[onnx]", "timmx[coreml]", "timmx[litert]"]
 
 [project.scripts]
@@ -32,6 +33,18 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "timmx"
 module-root = "src"
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "executorch" },
+        { extra = "litert" },
+    ],
+    [
+        { extra = "executorch" },
+        { extra = "all" },
+    ],
+]
 
 [tool.ruff]
 target-version = "py311"
