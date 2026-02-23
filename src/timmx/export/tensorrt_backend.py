@@ -325,7 +325,6 @@ def _warn_if_missing_onnxscript() -> None:
             "The ONNX intermediate export will fall back to the legacy TorchScript-based "
             "exporter, which is deprecated. Install with: pip install 'timmx[onnx]'",
             highlight=False,
-            stderr=True,
         )
 
 
