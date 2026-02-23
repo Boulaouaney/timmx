@@ -69,10 +69,10 @@ Runtime nuance:
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
 - For `executorch`, delegates are selected via `--delegate xnnpack` (default) or `--delegate coreml`.
-- For `executorch`, `--mode fp16` is only valid with `--delegate coreml`.
-- For `executorch`, `--mode int8` is only valid with `--delegate xnnpack` and uses PT2E quantization
-  (XNNPACKQuantizer from executorch + `torchao`). Calibration data can be provided via
-  `--calibration-data`. `--per-channel/--no-per-channel` controls quantization granularity.
+- For `executorch`, modes are `fp32` and `int8`. INT8 uses PT2E quantization with the appropriate
+  quantizer per delegate (`XNNPACKQuantizer` for xnnpack, `CoreMLQuantizer` for coreml).
+- For `executorch`, `--compute-precision float16|float32` controls CoreML compute precision (only
+  valid with `--delegate coreml`, defaults to float16). CoreML int8 auto-sets iOS 17 deployment target.
 - For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.

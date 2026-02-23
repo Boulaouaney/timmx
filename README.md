@@ -181,6 +181,16 @@ uv run timmx export executorch resnet18 \
   --output ./artifacts/resnet18_coreml.pte
 ```
 
+CoreML with explicit fp32 compute precision (default is fp16):
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --delegate coreml \
+  --compute-precision float32 \
+  --output ./artifacts/resnet18_coreml_fp32.pte
+```
+
 INT8 quantized with XNNPack:
 
 ```bash
@@ -190,6 +200,16 @@ uv run timmx export executorch resnet18 \
   --calibration-data ./calibration.pt \
   --calibration-steps 8 \
   --output ./artifacts/resnet18_int8.pte
+```
+
+INT8 quantized with CoreML:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --delegate coreml \
+  --mode int8 \
+  --output ./artifacts/resnet18_coreml_int8.pte
 ```
 
 Dynamic batch size:
