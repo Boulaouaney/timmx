@@ -8,6 +8,7 @@ touch points.
 
 Current built-in backends:
 - `coreml`
+- `executorch`
 - `litert`
 - `onnx`
 - `tensorrt`
@@ -67,6 +68,12 @@ Runtime nuance:
 - For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
+- For `executorch`, delegates are selected via `--delegate xnnpack` (default) or `--delegate coreml`.
+- For `executorch`, `--mode fp16` is only valid with `--delegate coreml`.
+- For `executorch`, `--mode int8` is only valid with `--delegate xnnpack` and uses PT2E quantization
+  (XNNPACKQuantizer from executorch + `torchao`). Calibration data can be provided via
+  `--calibration-data`. `--per-channel/--no-per-channel` controls quantization granularity.
+- For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
 
@@ -89,7 +96,7 @@ Runtime nuance:
 Run these from repo root:
 
 ```bash
-uv sync --all-extras --group dev
+uv sync --extra all --group dev
 uvx ruff format .
 uvx ruff check .
 uv run pytest
@@ -99,9 +106,11 @@ uv build
 ## Dependencies
 
 Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
-deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`. TensorRT
-cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
-directly with `pip install tensorrt`. The `all` extra installs `onnx + coreml + litert`.
+deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `executorch`.
+TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
+directly with `pip install tensorrt`. The `all` extra installs `onnx + coreml + litert` (excludes
+`executorch`). The `executorch` and `litert` extras conflict on torch version requirements
+(`torch>=2.10.0` vs `torch<2.10.0`) — this is declared via `[tool.uv] conflicts` in `pyproject.toml`.
 
 ## Scope Discipline
 

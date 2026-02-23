@@ -16,6 +16,7 @@ src/timmx/
     ├── types.py                # Shared enums (Device, etc.)
     ├── onnx_backend.py         # ONNX backend
     ├── coreml_backend.py       # Core ML backend
+    ├── executorch_backend.py   # ExecuTorch backend (XNNPack, CoreML delegates)
     ├── litert_backend.py       # LiteRT / TFLite backend
     ├── tensorrt_backend.py     # TensorRT backend
     └── torch_export_backend.py # torch.export backend

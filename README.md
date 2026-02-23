@@ -10,6 +10,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | Core ML | `timmx export coreml` | `.mlpackage` / `.mlmodel` |
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
 | TensorRT | `timmx export tensorrt` | `.engine` |
+| ExecuTorch | `timmx export executorch` | `.pte` |
 | torch.export | `timmx export torch-export` | `.pt2` |
 | TorchScript | `timmx export torchscript` | `.pt` |
 
@@ -32,8 +33,9 @@ Install with specific backend extras:
 pip install 'timmx[onnx]'           # ONNX export
 pip install 'timmx[coreml]'         # Core ML export
 pip install 'timmx[litert]'         # LiteRT/TFLite export
+pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML delegates)
 pip install 'timmx[onnx,coreml]'    # multiple backends
-pip install 'timmx[all]'            # all non-platform-specific backends
+pip install 'timmx[all]'            # onnx + coreml + litert (excludes executorch)
 ```
 
 TensorRT requires CUDA and must be installed separately:
@@ -160,6 +162,48 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_dynamic.engine
 ```
 
+### ExecuTorch
+
+Export with XNNPack delegation (default, runs on CPU across all platforms):
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18.pte
+```
+
+CoreML delegation (macOS — targets Apple Neural Engine / GPU / CPU):
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --delegate coreml \
+  --output ./artifacts/resnet18_coreml.pte
+```
+
+INT8 quantized with XNNPack:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --mode int8 \
+  --calibration-data ./calibration.pt \
+  --calibration-steps 8 \
+  --output ./artifacts/resnet18_int8.pte
+```
+
+Dynamic batch size:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --dynamic-batch \
+  --batch-size 2 \
+  --output ./artifacts/resnet18_dynamic.pte
+```
+
+> **Note:** The `executorch` extra requires `torch>=2.10.0` while `litert` requires `torch<2.10.0`. These extras cannot be installed in the same environment.
+
 ### torch.export
 
 ```bash
@@ -206,7 +250,7 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [x] LiteRT / TFLite
 - [x] torch.export
 - [x] TensorRT
-- [ ] ExecuTorch (XNNPACK + more delegates TBD)
+- [x] ExecuTorch (XNNPack + CoreML delegates)
 - [ ] OpenVINO
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
@@ -220,7 +264,7 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 ## Development
 
 ```bash
-uv sync --all-extras --group dev  # install all extras + pytest
+uv sync --extra all --group dev   # install non-conflicting extras + pytest
 uvx ruff format .                 # format
 uvx ruff check .                  # lint
 uv run pytest                     # test

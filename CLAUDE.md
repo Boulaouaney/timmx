@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`timmx` is an extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to deployment formats. Built-in backends: `onnx`, `coreml`, `litert`, `tensorrt`, `torch-export`, `torchscript`.
+`timmx` is an extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to deployment formats. Built-in backends: `onnx`, `coreml`, `litert`, `tensorrt`, `executorch`, `torch-export`, `torchscript`.
 
 ## Tooling
 
@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ```bash
-uv sync --all-extras --group dev          # Install all extras + pytest
+uv sync --extra all --group dev           # Install non-conflicting extras + pytest
 uv run pytest                             # Run all tests
 uv run pytest tests/test_cli.py           # Run a single test file
 uv run pytest tests/test_cli.py::test_name  # Run a single test
@@ -24,7 +24,7 @@ uv run pytest tests/test_cli.py::test_name  # Run a single test
 ### Quality gates (run before shipping)
 
 ```bash
-uv sync --all-extras --group dev
+uv sync --extra all --group dev
 uvx ruff format .
 uvx ruff check .
 uv run pytest
@@ -44,7 +44,7 @@ The codebase uses a **registry-based plugin architecture**:
 - `src/timmx/export/calibration.py` — calibration data loading/slicing for quantized exports
 - `src/timmx/errors.py` — `TimmxError` → `ConfigurationError` / `ExportError`
 
-Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tensorrt_backend.py`, `torch_export_backend.py`, `torchscript_backend.py`) owns all its format-specific CLI flags and export logic. The CLI never needs modification when adding a new backend.
+Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tensorrt_backend.py`, `executorch_backend.py`, `torch_export_backend.py`, `torchscript_backend.py`) owns all its format-specific CLI flags and export logic. The CLI never needs modification when adding a new backend.
 
 ## Adding a New Backend
 
@@ -62,12 +62,13 @@ Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tens
 
 ## Dependencies
 
-Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`. TensorRT is not an extra (can't be resolved cross-platform) — users install it directly with `pip install tensorrt`.
+Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `executorch`. TensorRT is not an extra (can't be resolved cross-platform) — users install it directly with `pip install tensorrt`. The `executorch` and `litert` extras conflict on torch version requirements (`torch>=2.10.0` vs `torch<2.10.0`) and cannot be installed together; this is declared via `[tool.uv] conflicts`.
 
 ## Backend-Specific Notes
 
 - **coreml**: `--compute-precision` is only valid with `--convert-to mlprogram`
 - **litert**: quantization modes are `fp32`, `fp16`, `dynamic-int8`, `int8`; `--calibration-data` expects a torch-saved tensor of shape `(N, C, H, W)`; `--nhwc-input` exposes channel-last input layout
 - **tensorrt**: requires `--device cuda`, `pip install tensorrt` (Linux/Windows with CUDA only), and `onnxscript` (install via `pip install 'timmx[onnx]'`) for dynamo-based ONNX intermediate export; `external_data=False` embeds weights inline; `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for dynamic shape capture; quantization modes are `fp32`, `fp16`, `int8`
+- **executorch**: delegates via `--delegate xnnpack` (default) or `--delegate coreml`; `--mode fp16` only valid with `--delegate coreml`; `--mode int8` only valid with `--delegate xnnpack` (uses PT2E quantization via `torchao`); `--per-channel/--no-per-channel` controls quantization granularity; `--dynamic-batch` requires `--batch-size >= 2`; output is `.pte`
 - **torch-export**: dynamic batch capture requires `--batch-size >= 2` for stable symbolic shapes
 - **torchscript**: `--method` selects `trace` (default, recommended) or `script`
