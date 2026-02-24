@@ -8,3 +8,4 @@ build/
 *.onnx
 *.onnx.data
 
+uv.lock
