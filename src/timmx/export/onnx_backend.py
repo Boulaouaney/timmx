@@ -31,7 +31,7 @@ class OnnxBackend(ExportBackend):
 
     def check_dependencies(self) -> DependencyStatus:
         missing = []
-        for mod in ("onnx", "onnxscript"):
+        for mod in ("onnx", "onnxscript", "onnxslim"):
             try:
                 __import__(mod)
             except ImportError:
@@ -100,20 +100,6 @@ class OnnxBackend(ExportBackend):
             except Exception as exc:
                 raise ExportError(f"ONNX export failed: {exc}") from exc
 
-            if check:
-                try:
-                    import onnx
-                except ImportError as exc:
-                    raise ExportError(
-                        "onnx is required for ONNX model checking. "
-                        "Install with: pip install 'timmx[onnx]'"
-                    ) from exc
-
-                try:
-                    onnx.checker.check_model(str(prep.output_path))
-                except Exception as exc:
-                    raise ExportError(f"Exported model failed ONNX check: {exc}") from exc
-
             if slim:
                 try:
                     import onnxslim
@@ -127,5 +113,19 @@ class OnnxBackend(ExportBackend):
                     onnxslim.slim(str(prep.output_path), str(prep.output_path))
                 except Exception as exc:
                     raise ExportError(f"onnxslim optimization failed: {exc}") from exc
+
+            if check:
+                try:
+                    import onnx
+                except ImportError as exc:
+                    raise ExportError(
+                        "onnx is required for ONNX model checking. "
+                        "Install with: pip install 'timmx[onnx]'"
+                    ) from exc
+
+                try:
+                    onnx.checker.check_model(str(prep.output_path))
+                except Exception as exc:
+                    raise ExportError(f"Exported model failed ONNX check: {exc}") from exc
 
         return command

@@ -38,6 +38,18 @@ def test_export_onnx_and_validate_with_checker(tmp_path: Path) -> None:
     onnx.checker.check_model(str(output_path))
 
 
+def test_export_onnx_without_slim(tmp_path: Path) -> None:
+    output_path = tmp_path / "resnet18_no_slim.onnx"
+    kwargs = _build_kwargs(output_path, slim=False)
+
+    backend = OnnxBackend()
+    command = backend.create_command()
+    command(**kwargs)
+
+    assert output_path.exists()
+    onnx.checker.check_model(str(output_path))
+
+
 def test_dynamic_batch_creates_symbolic_batch_dimension(tmp_path: Path) -> None:
     output_path = tmp_path / "resnet18_dynamic.onnx"
     kwargs = _build_kwargs(output_path, dynamic_batch=True)
