@@ -63,6 +63,9 @@ class OnnxBackend(ExportBackend):
                 bool, typer.Option(help="Save large model weights in external data files.")
             ] = False,
             check: Annotated[bool, typer.Option(help="Run ONNX checker after export.")] = True,
+            slim: Annotated[
+                bool, typer.Option(help="Optimize the exported model with onnxslim.")
+            ] = True,
         ) -> None:
             if opset < 7:
                 raise ConfigurationError("--opset must be >= 7.")
@@ -110,5 +113,19 @@ class OnnxBackend(ExportBackend):
                     onnx.checker.check_model(str(prep.output_path))
                 except Exception as exc:
                     raise ExportError(f"Exported model failed ONNX check: {exc}") from exc
+
+            if slim:
+                try:
+                    import onnxslim
+                except ImportError as exc:
+                    raise ExportError(
+                        "onnxslim is required for ONNX model optimization. "
+                        "Install with: pip install 'timmx[onnx]'"
+                    ) from exc
+
+                try:
+                    onnxslim.slim(str(prep.output_path), str(prep.output_path))
+                except Exception as exc:
+                    raise ExportError(f"onnxslim optimization failed: {exc}") from exc
 
         return command

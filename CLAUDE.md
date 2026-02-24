@@ -66,6 +66,7 @@ Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependenci
 
 ## Backend-Specific Notes
 
+- **onnx**: `--slim` (default `True`) runs onnxslim after export for graph optimization (constant folding, dead-code elimination, operator fusion); disable with `--no-slim`
 - **coreml**: `--compute-precision` is only valid with `--convert-to mlprogram`
 - **litert**: quantization modes are `fp32`, `fp16`, `dynamic-int8`, `int8`; `--calibration-data` expects a torch-saved tensor of shape `(N, C, H, W)`; `--nhwc-input` exposes channel-last input layout
 - **ncnn**: `--output` is a directory (not a file); writes `model.ncnn.param`, `model.ncnn.bin`, `model_ncnn.py`; pnnx intermediate files and `__pycache__` are cleaned up automatically; `--fp16` defaults to `True`; uses `pnnx.export()` internally (traces via TorchScript then converts); only `pnnx` is required — the `ncnn` Python package is not needed for export

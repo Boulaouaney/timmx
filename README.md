@@ -81,6 +81,12 @@ uv run timmx export onnx resnet18 \
   --output ./artifacts/resnet18_finetuned.onnx
 ```
 
+Exported models are automatically optimized with [onnxslim](https://github.com/inisis/OnnxSlim) (constant folding, dead-code elimination, operator fusion). To skip optimization:
+
+```bash
+uv run timmx export onnx resnet18 --pretrained --no-slim --output ./artifacts/resnet18.onnx
+```
+
 ### Core ML
 
 ```bash
