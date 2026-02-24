@@ -3,6 +3,7 @@ import pytest
 from timmx.export.base import DependencyStatus
 from timmx.export.coreml_backend import CoreMLBackend
 from timmx.export.litert_backend import LiteRTBackend
+from timmx.export.ncnn_backend import NcnnBackend
 from timmx.export.onnx_backend import OnnxBackend
 from timmx.export.registry import BackendRegistry, create_builtin_registry
 from timmx.export.tensorrt_backend import TensorRTBackend
@@ -15,6 +16,7 @@ def test_builtin_registry_contains_all_backends() -> None:
     assert registry.names() == [
         "coreml",
         "litert",
+        "ncnn",
         "onnx",
         "tensorrt",
         "torch-export",
@@ -22,6 +24,7 @@ def test_builtin_registry_contains_all_backends() -> None:
     ]
     assert isinstance(registry.get("coreml"), CoreMLBackend)
     assert isinstance(registry.get("litert"), LiteRTBackend)
+    assert isinstance(registry.get("ncnn"), NcnnBackend)
     assert isinstance(registry.get("onnx"), OnnxBackend)
     assert isinstance(registry.get("tensorrt"), TensorRTBackend)
     assert isinstance(registry.get("torch-export"), TorchExportBackend)
