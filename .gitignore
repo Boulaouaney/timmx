@@ -5,7 +5,22 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+uv.lock
+
+# Model formats
 *.onnx
 *.onnx.data
 
-uv.lock
+*.mlmodel
+*.mlpackage
+
+*.tflite
+
+*.pt
+*.pt2
+
+*.param
+*.bin
+*_ncnn.py
+
+*.engine
