@@ -1,7 +1,10 @@
+import builtins
+
 import pytest
 
 from timmx.export.base import DependencyStatus
 from timmx.export.coreml_backend import CoreMLBackend
+from timmx.export.executorch_backend import ExecuTorchBackend
 from timmx.export.litert_backend import LiteRTBackend
 from timmx.export.ncnn_backend import NcnnBackend
 from timmx.export.onnx_backend import OnnxBackend
@@ -15,6 +18,7 @@ def test_builtin_registry_contains_all_backends() -> None:
     registry = create_builtin_registry()
     assert registry.names() == [
         "coreml",
+        "executorch",
         "litert",
         "ncnn",
         "onnx",
@@ -23,6 +27,7 @@ def test_builtin_registry_contains_all_backends() -> None:
         "torchscript",
     ]
     assert isinstance(registry.get("coreml"), CoreMLBackend)
+    assert isinstance(registry.get("executorch"), ExecuTorchBackend)
     assert isinstance(registry.get("litert"), LiteRTBackend)
     assert isinstance(registry.get("ncnn"), NcnnBackend)
     assert isinstance(registry.get("onnx"), OnnxBackend)
@@ -46,3 +51,20 @@ def test_registry_rejects_duplicate_backend_names() -> None:
     registry.register(OnnxBackend())
     with pytest.raises(ValueError):
         registry.register(OnnxBackend())
+
+
+def test_check_dependencies_reports_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_import = builtins.__import__
+    blocked = {"onnx", "onnxscript"}
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name in blocked:
+            raise ImportError(f"No module named '{name}'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    status = OnnxBackend().check_dependencies()
+    assert status.available is False
+    assert set(status.missing_packages) == blocked
+    assert status.install_hint != ""

@@ -1,8 +1,10 @@
 from pathlib import Path
 
-import onnx
+import pytest
 
 from timmx.export.onnx_backend import OnnxBackend
+
+onnx = pytest.importorskip("onnx")
 
 
 def _build_kwargs(output_path: Path, dynamic_batch: bool = False) -> dict:

@@ -1,10 +1,11 @@
 from pathlib import Path
 
-import coremltools as ct
 import pytest
 
 from timmx.errors import ConfigurationError
 from timmx.export.coreml_backend import CoreMLBackend
+
+ct = pytest.importorskip("coremltools")
 
 
 def _build_kwargs(

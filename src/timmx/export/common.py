@@ -143,7 +143,7 @@ def resolve_input_size(
     if requested is not None:
         return requested
 
-    config = resolve_data_config({}, model=model)
+    config = resolve_data_config(model=model)
     raw_input_size = config.get("input_size")
     if isinstance(raw_input_size, tuple) and len(raw_input_size) == 3:
         return int(raw_input_size[0]), int(raw_input_size[1]), int(raw_input_size[2])

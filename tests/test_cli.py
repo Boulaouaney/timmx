@@ -26,13 +26,26 @@ def test_root_help_mentions_doctor() -> None:
 def test_export_help_lists_backends() -> None:
     result = runner.invoke(app, ["export", "--help"])
     assert result.exit_code == 0
-    assert "onnx" in result.output
     assert "coreml" in result.output
+    assert "executorch" in result.output
     assert "litert" in result.output
     assert "ncnn" in result.output
+    assert "onnx" in result.output
     assert "tensorrt" in result.output
     assert "torch-export" in result.output
     assert "torchscript" in result.output
+
+
+def test_export_executorch_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "executorch", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--delegate" in result.output
+    assert "--mode" in result.output
+    assert "compute-preci" in result.output
+    assert "--dynamic-batch" in result.output
+    assert "--calibration-d" in result.output
+    assert "--per-channel" in result.output
 
 
 def test_export_onnx_help_shows_options() -> None:

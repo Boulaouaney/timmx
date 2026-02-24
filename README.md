@@ -11,6 +11,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
 | ncnn | `timmx export ncnn` | directory (`.param` + `.bin`) |
 | TensorRT | `timmx export tensorrt` | `.engine` |
+| ExecuTorch | `timmx export executorch` | `.pte` |
 | torch.export | `timmx export torch-export` | `.pt2` |
 | TorchScript | `timmx export torchscript` | `.pt` |
 
@@ -34,8 +35,8 @@ pip install 'timmx[onnx]'           # ONNX export
 pip install 'timmx[coreml]'         # Core ML export
 pip install 'timmx[litert]'         # LiteRT/TFLite export
 pip install 'timmx[ncnn]'           # ncnn export (via pnnx)
+pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML delegates)
 pip install 'timmx[onnx,coreml]'    # multiple backends
-pip install 'timmx[all]'            # all non-platform-specific backends
 ```
 
 TensorRT requires CUDA and must be installed separately:
@@ -43,6 +44,10 @@ TensorRT requires CUDA and must be installed separately:
 ```bash
 pip install tensorrt  # Linux/Windows with CUDA only
 ```
+
+> **Note:** The `executorch` and `litert` extras have conflicting torch version
+> requirements (`executorch` needs `torch>=2.10.0`, `litert` needs `torch<2.10.0`)
+> and cannot be installed in the same environment.
 
 Check which backends are available:
 
@@ -53,7 +58,7 @@ timmx doctor
 ## Quick Start
 
 ```bash
-uv sync --all-extras --group dev
+uv sync --extra onnx --extra coreml --extra ncnn --group dev
 uv run timmx doctor
 uv run timmx --help
 ```
@@ -181,6 +186,66 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_dynamic.engine
 ```
 
+### ExecuTorch
+
+Export with XNNPack delegation (default, runs on CPU across all platforms):
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18.pte
+```
+
+CoreML delegation (macOS — targets Apple Neural Engine / GPU / CPU):
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --delegate coreml \
+  --output ./artifacts/resnet18_coreml.pte
+```
+
+CoreML with explicit fp32 compute precision (default is fp16):
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --delegate coreml \
+  --compute-precision float32 \
+  --output ./artifacts/resnet18_coreml_fp32.pte
+```
+
+INT8 quantized with XNNPack:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --mode int8 \
+  --calibration-data ./calibration.pt \
+  --calibration-steps 8 \
+  --output ./artifacts/resnet18_int8.pte
+```
+
+INT8 quantized with CoreML:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --delegate coreml \
+  --mode int8 \
+  --output ./artifacts/resnet18_coreml_int8.pte
+```
+
+Dynamic batch size:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --dynamic-batch \
+  --batch-size 2 \
+  --output ./artifacts/resnet18_dynamic.pte
+```
+
 ### torch.export
 
 ```bash
@@ -229,7 +294,7 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [x] torch.export
 - [x] TensorRT
 - [x] TorchScript
-- [ ] ExecuTorch (XNNPACK + more delegates TBD)
+- [x] ExecuTorch (XNNPack + CoreML delegates)
 - [ ] OpenVINO
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
@@ -241,11 +306,11 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 ## Development
 
 ```bash
-uv sync --all-extras --group dev  # install all extras + pytest
-uvx ruff format .                 # format
-uvx ruff check .                  # lint
-uv run pytest                     # test
-uv build                          # build
+uv sync --extra onnx --extra coreml --extra ncnn --group dev  # install extras + pytest
+uvx ruff format .                                              # format
+uvx ruff check .                                               # lint
+uv run pytest                                                  # test
+uv build                                                       # build
 ```
 
 ## Adding a New Backend
