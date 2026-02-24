@@ -218,7 +218,7 @@ def _export_quantized(
     partitioner: list[object],
 ) -> object:
     from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+    from torchao.quantization.pt2e import quantize_pt2e
 
     calibration_batches = resolve_calibration_batches(
         calibration_data=calibration_data,
@@ -233,13 +233,13 @@ def _export_quantized(
     try:
         exported_module = torch.export.export(model, (example_input,)).module()
 
-        prepared = prepare_pt2e(exported_module, quantizer)
+        prepared = quantize_pt2e.prepare_pt2e(exported_module, quantizer)
 
         with torch.no_grad():
             for batch in calibration_batches:
                 prepared(batch)
 
-        quantized = convert_pt2e(prepared)
+        quantized = quantize_pt2e.convert_pt2e(prepared)
     except Exception as exc:
         raise ExportError(f"PT2E quantization failed: {exc}") from exc
 
