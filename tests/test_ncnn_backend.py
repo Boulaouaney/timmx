@@ -34,6 +34,7 @@ def test_export_ncnn_creates_param_and_bin(tmp_path: Path) -> None:
 
     assert (output_dir / "model.ncnn.param").exists()
     assert (output_dir / "model.ncnn.bin").exists()
+    assert (output_dir / "model_ncnn.py").exists()
 
 
 def test_export_ncnn_cleans_up_pnnx_intermediates(tmp_path: Path) -> None:
@@ -62,6 +63,7 @@ def test_export_ncnn_fp32(tmp_path: Path) -> None:
 
     assert (output_dir / "model.ncnn.param").exists()
     assert (output_dir / "model.ncnn.bin").exists()
+    assert (output_dir / "model_ncnn.py").exists()
 
 
 def test_ncnn_backend_check_dependencies() -> None:
