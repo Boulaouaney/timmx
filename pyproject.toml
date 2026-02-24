@@ -5,19 +5,18 @@ description = "Extensible CLI and Python package for exporting timm models."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "rich>=14.0.0",
-  "timm>=1.0.20",
-  "torch>=2.9.1",
-  "typer>=0.15.0",
+  "rich",
+  "timm",
+  "torch>=2.5.0",
+  "typer",
 ]
 
 [project.optional-dependencies]
-all = ["timmx[onnx]", "timmx[coreml]", "timmx[litert]", "timmx[ncnn]"]
-coreml = ["coremltools==9.0"]
+coreml = ["coremltools>=9.0"]
 executorch = ["executorch>=1.1.0"]
-litert = ["litert-torch==0.8.0"]
-ncnn = ["pnnx==20260112"]
-onnx = ["onnx==1.20.1", "onnxscript==0.6.2"]
+litert = ["litert-torch>=0.8.0"]
+ncnn = ["pnnx"]
+onnx = ["onnx>=1.16", "onnxscript"]
 
 [project.scripts]
 timmx = "timmx.cli:main"
@@ -34,18 +33,6 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "timmx"
 module-root = "src"
-
-[tool.uv]
-conflicts = [
-  [
-    { extra = "executorch" },
-    { extra = "litert" },
-  ],
-  [
-    { extra = "executorch" },
-    { extra = "all" },
-  ],
-]
 
 [tool.ruff]
 target-version = "py311"
