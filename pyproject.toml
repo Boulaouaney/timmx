@@ -34,6 +34,14 @@ build-backend = "uv_build"
 module-name = "timmx"
 module-root = "src"
 
+[tool.uv]
+conflicts = [
+  [
+    { extra = "executorch" },
+    { extra = "litert" },
+  ],
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
