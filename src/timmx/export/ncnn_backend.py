@@ -28,17 +28,15 @@ class NcnnBackend(ExportBackend):
     help = "Export a timm model to ncnn (.param/.bin) via pnnx."
 
     def check_dependencies(self) -> DependencyStatus:
-        missing = []
-        for mod in ("pnnx", "ncnn"):
-            try:
-                __import__(mod)
-            except ImportError:
-                missing.append(mod)
-        return DependencyStatus(
-            available=not missing,
-            missing_packages=missing,
-            install_hint="pip install 'timmx[ncnn]'",
-        )
+        try:
+            __import__("pnnx")
+            return DependencyStatus(available=True, missing_packages=[], install_hint="")
+        except ImportError:
+            return DependencyStatus(
+                available=False,
+                missing_packages=["pnnx"],
+                install_hint="pip install 'timmx[ncnn]'",
+            )
 
     def create_command(self) -> Callable[..., None]:
         def command(

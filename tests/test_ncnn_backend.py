@@ -69,4 +69,3 @@ def test_ncnn_backend_check_dependencies() -> None:
     status = backend.check_dependencies()
     assert status.available
     assert status.missing_packages == []
-    assert "timmx[ncnn]" in status.install_hint

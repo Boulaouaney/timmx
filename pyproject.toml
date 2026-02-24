@@ -15,7 +15,7 @@ dependencies = [
 onnx = ["onnx==1.20.1", "onnxscript==0.6.2"]
 coreml = ["coremltools==9.0"]
 litert = ["litert-torch==0.8.0"]
-ncnn = ["ncnn==1.0.20260114", "pnnx==20260112"]
+ncnn = ["pnnx==20260112"]
 all = ["timmx[onnx]", "timmx[coreml]", "timmx[litert]", "timmx[ncnn]"]
 
 [project.scripts]

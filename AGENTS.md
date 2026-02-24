@@ -65,7 +65,8 @@ Runtime nuance:
   torch-saved tensor with shape `(N, C, H, W)`.
 - For `ncnn`, `--output` is a directory (not a file); pnnx intermediate files (`model.pt`, `model.pnnx.*`,
   `model_pnnx.py`) and `__pycache__` are removed automatically after export. `--fp16` defaults to `True`.
-  Requires `pip install 'timmx[ncnn]'`.
+  Requires `pip install 'timmx[ncnn]'` (installs `pnnx` only; the `ncnn` Python package is not needed
+  for export — the conversion is handled internally by `pnnx`).
 - For `tensorrt`, `--device cuda`, `pip install tensorrt`, and `onnxscript` (via `pip install 'timmx[onnx]'`)
   are required. TensorRT export uses dynamo-based ONNX as an intermediate step.
 - For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
