@@ -19,8 +19,11 @@ uv.lock
 *.pt
 *.pt2
 
-*.param
-*.bin
+*.ncnn.param
+*.ncnn.bin
+*.pnnx.param
+*.pnnx.bin
 *_ncnn.py
+*_pnnx.py
 
 *.engine
