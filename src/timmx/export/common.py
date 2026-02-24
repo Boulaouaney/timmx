@@ -61,12 +61,21 @@ def prepare_export(
     batch_size: int,
     input_size: tuple[int, int, int] | None,
     device: Device | str,
+    output_is_dir: bool = False,
 ) -> PreparedExport:
-    """Validate common args, create the timm model, and build an example input."""
+    """Validate common args, create the timm model, and build an example input.
+
+    Set *output_is_dir=True* when the backend writes to a directory rather than a
+    single file (e.g. ncnn).  The resolved path is then created as a directory;
+    otherwise its parent directory is created.
+    """
     validate_common_args(batch_size=batch_size, device=device)
 
     output_path = Path(output).expanduser().resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_is_dir:
+        output_path.mkdir(parents=True, exist_ok=True)
+    else:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
     model = create_timm_model(
         model_name,
@@ -92,6 +101,7 @@ def prepare_export(
     )
 
 
+# TODO: add preprocessing (norm) & postprocessing (softmax) wrapper
 def create_timm_model(
     model_name: str,
     *,

@@ -9,6 +9,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | ONNX | `timmx export onnx` | `.onnx` |
 | Core ML | `timmx export coreml` | `.mlpackage` / `.mlmodel` |
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
+| ncnn | `timmx export ncnn` | directory (`.param` + `.bin`) |
 | TensorRT | `timmx export tensorrt` | `.engine` |
 | ExecuTorch | `timmx export executorch` | `.pte` |
 | torch.export | `timmx export torch-export` | `.pt2` |
@@ -33,9 +34,10 @@ Install with specific backend extras:
 pip install 'timmx[onnx]'           # ONNX export
 pip install 'timmx[coreml]'         # Core ML export
 pip install 'timmx[litert]'         # LiteRT/TFLite export
+pip install 'timmx[ncnn]'           # ncnn export (via pnnx)
 pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML delegates)
 pip install 'timmx[onnx,coreml]'    # multiple backends
-pip install 'timmx[all]'            # onnx + coreml + litert (excludes executorch)
+pip install 'timmx[all]'            # onnx + coreml + litert + ncnn (excludes executorch)
 ```
 
 TensorRT requires CUDA and must be installed separately:
@@ -126,6 +128,25 @@ uv run timmx export litert resnet18 \
   --mode fp32 \
   --nhwc-input \
   --output ./artifacts/resnet18_nhwc.tflite
+```
+
+### ncnn
+
+Exports via [pnnx](https://github.com/pnnx/pnnx) and writes a deployment-ready ncnn model directory containing `model.ncnn.param`, `model.ncnn.bin`, and `model_ncnn.py`. pnnx intermediate files are removed automatically.
+
+```bash
+uv run timmx export ncnn resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18_ncnn
+```
+
+Export without fp16 weight quantization:
+
+```bash
+uv run timmx export ncnn resnet18 \
+  --pretrained \
+  --no-fp16 \
+  --output ./artifacts/resnet18_ncnn_fp32
 ```
 
 ### TensorRT
@@ -268,18 +289,18 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [x] ONNX
 - [x] Core ML
 - [x] LiteRT / TFLite
+- [x] ncnn
 - [x] torch.export
 - [x] TensorRT
+- [x] TorchScript
 - [x] ExecuTorch (XNNPack + CoreML delegates)
 - [ ] OpenVINO
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
 - [ ] TFLite Edge TPU
-- [ ] NCNN
 - [ ] RKNN
 - [ ] MNN
 - [ ] PaddlePaddle
-- [x] TorchScript
 
 ## Development
 

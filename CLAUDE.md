@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`timmx` is an extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to deployment formats. Built-in backends: `onnx`, `coreml`, `litert`, `tensorrt`, `executorch`, `torch-export`, `torchscript`.
+`timmx` is an extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to deployment formats. Built-in backends: `onnx`, `coreml`, `litert`, `ncnn`, `tensorrt`, `executorch`, `torch-export`, `torchscript`.
 
 ## Tooling
 
@@ -44,7 +44,7 @@ The codebase uses a **registry-based plugin architecture**:
 - `src/timmx/export/calibration.py` — calibration data loading/slicing for quantized exports
 - `src/timmx/errors.py` — `TimmxError` → `ConfigurationError` / `ExportError`
 
-Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tensorrt_backend.py`, `executorch_backend.py`, `torch_export_backend.py`, `torchscript_backend.py`) owns all its format-specific CLI flags and export logic. The CLI never needs modification when adding a new backend.
+Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `ncnn_backend.py`, `tensorrt_backend.py`, `executorch_backend.py`, `torch_export_backend.py`, `torchscript_backend.py`) owns all its format-specific CLI flags and export logic. The CLI never needs modification when adding a new backend.
 
 ## Adding a New Backend
 
@@ -62,12 +62,13 @@ Each backend (`onnx_backend.py`, `coreml_backend.py`, `litert_backend.py`, `tens
 
 ## Dependencies
 
-Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `executorch`. TensorRT is not an extra (can't be resolved cross-platform) — users install it directly with `pip install tensorrt`. The `executorch` and `litert` extras conflict on torch version requirements (`torch>=2.10.0` vs `torch<2.10.0`) and cannot be installed together; this is declared via `[tool.uv] conflicts`.
+Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `ncnn`, `executorch`. TensorRT is not an extra (can't be resolved cross-platform) — users install it directly with `pip install tensorrt`. The `executorch` and `litert` extras conflict on torch version requirements (`torch>=2.10.0` vs `torch<2.10.0`) and cannot be installed together; this is declared via `[tool.uv] conflicts`.
 
 ## Backend-Specific Notes
 
 - **coreml**: `--compute-precision` is only valid with `--convert-to mlprogram`
 - **litert**: quantization modes are `fp32`, `fp16`, `dynamic-int8`, `int8`; `--calibration-data` expects a torch-saved tensor of shape `(N, C, H, W)`; `--nhwc-input` exposes channel-last input layout
+- **ncnn**: `--output` is a directory (not a file); writes `model.ncnn.param`, `model.ncnn.bin`, `model_ncnn.py`; pnnx intermediate files and `__pycache__` are cleaned up automatically; `--fp16` defaults to `True`; uses `pnnx.export()` internally (traces via TorchScript then converts); only `pnnx` is required — the `ncnn` Python package is not needed for export
 - **tensorrt**: requires `--device cuda`, `pip install tensorrt` (Linux/Windows with CUDA only), and `onnxscript` (install via `pip install 'timmx[onnx]'`) for dynamo-based ONNX intermediate export; `external_data=False` embeds weights inline; `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for dynamic shape capture; quantization modes are `fp32`, `fp16`, `int8`
 - **executorch**: delegates via `--delegate xnnpack` (default) or `--delegate coreml`; modes are `fp32` (default) and `int8` (PT2E quantization — uses `XNNPACKQuantizer` for xnnpack, `CoreMLQuantizer` for coreml); `--compute-precision float16|float32` controls CoreML compute precision (only with `--delegate coreml`, defaults to float16); CoreML int8 auto-sets `minimum_deployment_target=iOS17`; `--per-channel/--no-per-channel` controls quantization granularity; `--dynamic-batch` requires `--batch-size >= 2`; output is `.pte`
 - **torch-export**: dynamic batch capture requires `--batch-size >= 2` for stable symbolic shapes

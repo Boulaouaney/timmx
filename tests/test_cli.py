@@ -29,6 +29,7 @@ def test_export_help_lists_backends() -> None:
     assert "coreml" in result.output
     assert "executorch" in result.output
     assert "litert" in result.output
+    assert "ncnn" in result.output
     assert "onnx" in result.output
     assert "tensorrt" in result.output
     assert "torch-export" in result.output
@@ -99,3 +100,11 @@ def test_export_torchscript_help_shows_options() -> None:
     assert "--output" in result.output
     assert "--method" in result.output
     assert "--verify" in result.output
+
+
+def test_export_ncnn_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "ncnn", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in result.output
+    assert "--fp16" in result.output
+    assert "--device" in result.output
