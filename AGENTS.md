@@ -9,6 +9,7 @@ touch points.
 Current built-in backends:
 - `coreml`
 - `litert`
+- `ncnn`
 - `onnx`
 - `tensorrt`
 - `torch-export`
@@ -62,6 +63,10 @@ Runtime nuance:
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
 - For `litert` quantized modes, calibration data can be provided via `--calibration-data` as a
   torch-saved tensor with shape `(N, C, H, W)`.
+- For `ncnn`, `--output` is a directory (not a file); pnnx intermediate files (`model.pt`, `model.pnnx.*`,
+  `model_pnnx.py`) and `__pycache__` are removed automatically after export. `--fp16` defaults to `True`.
+  Requires `pip install 'timmx[ncnn]'` (installs `pnnx` only; the `ncnn` Python package is not needed
+  for export — the conversion is handled internally by `pnnx`).
 - For `tensorrt`, `--device cuda`, `pip install tensorrt`, and `onnxscript` (via `pip install 'timmx[onnx]'`)
   are required. TensorRT export uses dynamo-based ONNX as an intermediate step.
 - For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
@@ -99,9 +104,9 @@ uv build
 ## Dependencies
 
 Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
-deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`. TensorRT
-cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
-directly with `pip install tensorrt`. The `all` extra installs `onnx + coreml + litert`.
+deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `ncnn`.
+TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
+directly with `pip install tensorrt`. The `all` extra installs `onnx + coreml + litert + ncnn`.
 
 ## Scope Discipline
 
