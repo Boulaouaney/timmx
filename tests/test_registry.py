@@ -55,7 +55,7 @@ def test_registry_rejects_duplicate_backend_names() -> None:
 
 def test_check_dependencies_reports_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
     real_import = builtins.__import__
-    blocked = {"onnx", "onnxscript"}
+    blocked = {"onnx", "onnxscript", "onnxslim"}
 
     def _fake_import(name: str, *args: object, **kwargs: object) -> object:
         if name in blocked:

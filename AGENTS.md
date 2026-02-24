@@ -59,6 +59,8 @@ Every backend must:
 The CLI must remain format-agnostic and dispatch through the registry.
 
 Runtime nuance:
+- For `onnx`, `--slim` (default `True`) runs onnxslim after export for graph optimization (constant
+  folding, dead-code elimination, operator fusion); disable with `--no-slim`.
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
 - For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`.
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).

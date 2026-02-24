@@ -31,7 +31,7 @@ class OnnxBackend(ExportBackend):
 
     def check_dependencies(self) -> DependencyStatus:
         missing = []
-        for mod in ("onnx", "onnxscript"):
+        for mod in ("onnx", "onnxscript", "onnxslim"):
             try:
                 __import__(mod)
             except ImportError:
@@ -63,6 +63,9 @@ class OnnxBackend(ExportBackend):
                 bool, typer.Option(help="Save large model weights in external data files.")
             ] = False,
             check: Annotated[bool, typer.Option(help="Run ONNX checker after export.")] = True,
+            slim: Annotated[
+                bool, typer.Option(help="Optimize the exported model with onnxslim.")
+            ] = True,
         ) -> None:
             if opset < 7:
                 raise ConfigurationError("--opset must be >= 7.")
@@ -96,6 +99,20 @@ class OnnxBackend(ExportBackend):
                 torch.onnx.export(prep.model, (prep.example_input,), **export_kwargs)
             except Exception as exc:
                 raise ExportError(f"ONNX export failed: {exc}") from exc
+
+            if slim:
+                try:
+                    import onnxslim
+                except ImportError as exc:
+                    raise ExportError(
+                        "onnxslim is required for ONNX model optimization. "
+                        "Install with: pip install 'timmx[onnx]'"
+                    ) from exc
+
+                try:
+                    onnxslim.slim(str(prep.output_path), str(prep.output_path))
+                except Exception as exc:
+                    raise ExportError(f"onnxslim optimization failed: {exc}") from exc
 
             if check:
                 try:

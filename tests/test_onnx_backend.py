@@ -7,7 +7,7 @@ from timmx.export.onnx_backend import OnnxBackend
 onnx = pytest.importorskip("onnx")
 
 
-def _build_kwargs(output_path: Path, dynamic_batch: bool = False) -> dict:
+def _build_kwargs(output_path: Path, dynamic_batch: bool = False, slim: bool = True) -> dict:
     return {
         "model_name": "resnet18",
         "output": output_path,
@@ -22,12 +22,25 @@ def _build_kwargs(output_path: Path, dynamic_batch: bool = False) -> dict:
         "device": "cpu",
         "external_data": False,
         "check": True,
+        "slim": slim,
     }
 
 
 def test_export_onnx_and_validate_with_checker(tmp_path: Path) -> None:
     output_path = tmp_path / "resnet18.onnx"
     kwargs = _build_kwargs(output_path)
+
+    backend = OnnxBackend()
+    command = backend.create_command()
+    command(**kwargs)
+
+    assert output_path.exists()
+    onnx.checker.check_model(str(output_path))
+
+
+def test_export_onnx_without_slim(tmp_path: Path) -> None:
+    output_path = tmp_path / "resnet18_no_slim.onnx"
+    kwargs = _build_kwargs(output_path, slim=False)
 
     backend = OnnxBackend()
     command = backend.create_command()

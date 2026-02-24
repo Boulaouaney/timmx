@@ -16,7 +16,7 @@ coreml = ["coremltools>=9.0"]
 executorch = ["executorch>=1.1.0"]
 litert = ["litert-torch>=0.8.0"]
 ncnn = ["pnnx"]
-onnx = ["onnx>=1.16", "onnxscript"]
+onnx = ["onnx>=1.16", "onnxscript", "onnxslim"]
 
 [project.scripts]
 timmx = "timmx.cli:main"
