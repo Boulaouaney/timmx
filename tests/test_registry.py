@@ -1,3 +1,5 @@
+import builtins
+
 import pytest
 
 from timmx.export.base import DependencyStatus
@@ -49,3 +51,20 @@ def test_registry_rejects_duplicate_backend_names() -> None:
     registry.register(OnnxBackend())
     with pytest.raises(ValueError):
         registry.register(OnnxBackend())
+
+
+def test_check_dependencies_reports_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_import = builtins.__import__
+    blocked = {"onnx", "onnxscript"}
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name in blocked:
+            raise ImportError(f"No module named '{name}'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    status = OnnxBackend().check_dependencies()
+    assert status.available is False
+    assert set(status.missing_packages) == blocked
+    assert status.install_hint != ""
