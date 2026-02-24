@@ -4,7 +4,16 @@ from timmx.cli import app
 
 runner = CliRunner()
 
-BACKENDS = ["coreml", "executorch", "litert", "onnx", "tensorrt", "torch-export", "torchscript"]
+BACKENDS = [
+    "coreml",
+    "executorch",
+    "litert",
+    "ncnn",
+    "onnx",
+    "tensorrt",
+    "torch-export",
+    "torchscript",
+]
 
 
 def test_doctor_runs_successfully() -> None:

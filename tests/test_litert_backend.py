@@ -3,10 +3,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from ai_edge_litert import interpreter as tfl_interpreter
 
 from timmx.errors import ConfigurationError
 from timmx.export.litert_backend import LiteRTBackend
+
+pytest.importorskip("ai_edge_litert")
+from ai_edge_litert import interpreter as tfl_interpreter  # noqa: E402
 
 
 class _ConvModel(torch.nn.Module):
