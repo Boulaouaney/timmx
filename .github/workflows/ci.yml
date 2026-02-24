@@ -28,6 +28,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --group dev
       - run: uv run pytest
+        env:
+          NO_COLOR: "1"
 
   build:
     runs-on: ubuntu-latest
