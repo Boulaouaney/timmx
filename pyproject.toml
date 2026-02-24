@@ -1,6 +1,6 @@
 [project]
 name = "timmx"
-version = "0.1.0"
+version = "0.2.0"
 description = "Extensible CLI and Python package for exporting timm models."
 readme = "README.md"
 requires-python = ">=3.11"
