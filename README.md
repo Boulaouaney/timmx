@@ -9,6 +9,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | ONNX | `timmx export onnx` | `.onnx` |
 | Core ML | `timmx export coreml` | `.mlpackage` / `.mlmodel` |
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
+| ncnn | `timmx export ncnn` | directory (`.param` + `.bin`) |
 | TensorRT | `timmx export tensorrt` | `.engine` |
 | torch.export | `timmx export torch-export` | `.pt2` |
 | TorchScript | `timmx export torchscript` | `.pt` |
@@ -32,6 +33,7 @@ Install with specific backend extras:
 pip install 'timmx[onnx]'           # ONNX export
 pip install 'timmx[coreml]'         # Core ML export
 pip install 'timmx[litert]'         # LiteRT/TFLite export
+pip install 'timmx[ncnn]'           # ncnn export (via pnnx)
 pip install 'timmx[onnx,coreml]'    # multiple backends
 pip install 'timmx[all]'            # all non-platform-specific backends
 ```
@@ -126,6 +128,25 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_nhwc.tflite
 ```
 
+### ncnn
+
+Exports via [pnnx](https://github.com/pnnx/pnnx) and writes a deployment-ready ncnn model directory containing `model.ncnn.param`, `model.ncnn.bin`, and `model_ncnn.py`. pnnx intermediate files are removed automatically.
+
+```bash
+uv run timmx export ncnn resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18_ncnn
+```
+
+Export without fp16 weight quantization:
+
+```bash
+uv run timmx export ncnn resnet18 \
+  --pretrained \
+  --no-fp16 \
+  --output ./artifacts/resnet18_ncnn_fp32
+```
+
 ### TensorRT
 
 Requires an NVIDIA GPU with CUDA and the `tensorrt` package (`pip install tensorrt`).
@@ -204,18 +225,18 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [x] ONNX
 - [x] Core ML
 - [x] LiteRT / TFLite
+- [x] ncnn
 - [x] torch.export
 - [x] TensorRT
+- [x] TorchScript
 - [ ] ExecuTorch (XNNPACK + more delegates TBD)
 - [ ] OpenVINO
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
 - [ ] TFLite Edge TPU
-- [ ] NCNN
 - [ ] RKNN
 - [ ] MNN
 - [ ] PaddlePaddle
-- [x] TorchScript
 
 ## Development
 
