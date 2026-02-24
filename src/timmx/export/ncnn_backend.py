@@ -5,7 +5,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
-import torch
 import typer
 
 from timmx.errors import ExportError
@@ -19,9 +18,7 @@ from timmx.export.common import (
     ModelNameArg,
     NumClassesOpt,
     PretrainedOpt,
-    create_timm_model,
-    resolve_input_size,
-    validate_common_args,
+    prepare_export,
 )
 from timmx.export.types import Device
 
@@ -61,25 +58,19 @@ class NcnnBackend(ExportBackend):
                 typer.Option(help="Export weights in fp16 precision."),
             ] = True,
         ) -> None:
-            validate_common_args(batch_size=batch_size, device=str(device))
-
-            output_dir = Path(output).expanduser().resolve()
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            model = create_timm_model(
-                model_name,
-                pretrained=pretrained,
+            prep = prepare_export(
+                model_name=model_name,
+                output=output,
                 checkpoint=checkpoint,
+                pretrained=pretrained,
                 num_classes=num_classes,
                 in_chans=in_chans,
+                batch_size=batch_size,
+                input_size=input_size,
+                device=device,
+                output_is_dir=True,
             )
-            resolved_input_size = resolve_input_size(model, input_size)
-
-            torch_device = torch.device(str(device))
-            model = model.to(torch_device)
-            model.eval()
-
-            example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
+            output_dir = prep.output_path
 
             try:
                 import pnnx
@@ -99,8 +90,8 @@ class NcnnBackend(ExportBackend):
 
             try:
                 pnnx.export(
-                    model,
-                    inputs=example_input,
+                    prep.model,
+                    inputs=prep.example_input,
                     ptpath=str(ptpath),
                     pnnxparam=str(pnnxparam),
                     pnnxbin=str(pnnxbin),
