@@ -101,7 +101,7 @@ Runtime nuance:
 Run these from repo root:
 
 ```bash
-uv sync --extra all --group dev
+uv sync --extra onnx --extra coreml --extra ncnn --group dev
 uvx ruff format .
 uvx ruff check .
 uv run pytest
@@ -113,9 +113,9 @@ uv build
 Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
 deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `ncnn`, `executorch`.
 TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
-directly with `pip install tensorrt`. The `all` extra installs `onnx + coreml + litert + ncnn` (excludes
-`executorch`). The `executorch` and `litert` extras conflict on torch version requirements
-(`torch>=2.10.0` vs `torch<2.10.0`) — this is declared via `[tool.uv] conflicts` in `pyproject.toml`.
+directly with `pip install tensorrt`. The `executorch` and `litert` extras conflict on torch version
+requirements (`torch>=2.10.0` vs `torch<2.10.0`) and cannot be installed together — this is declared
+via `[tool.uv] conflicts` in `pyproject.toml`.
 
 ## Scope Discipline
 

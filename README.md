@@ -37,7 +37,6 @@ pip install 'timmx[litert]'         # LiteRT/TFLite export
 pip install 'timmx[ncnn]'           # ncnn export (via pnnx)
 pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML delegates)
 pip install 'timmx[onnx,coreml]'    # multiple backends
-pip install 'timmx[all]'            # onnx + coreml + litert + ncnn (excludes executorch)
 ```
 
 TensorRT requires CUDA and must be installed separately:
@@ -45,6 +44,10 @@ TensorRT requires CUDA and must be installed separately:
 ```bash
 pip install tensorrt  # Linux/Windows with CUDA only
 ```
+
+> **Note:** The `executorch` and `litert` extras have conflicting torch version
+> requirements (`executorch` needs `torch>=2.10.0`, `litert` needs `torch<2.10.0`)
+> and cannot be installed in the same environment.
 
 Check which backends are available:
 
@@ -55,7 +58,7 @@ timmx doctor
 ## Quick Start
 
 ```bash
-uv sync --all-extras --group dev
+uv sync --extra onnx --extra coreml --extra ncnn --group dev
 uv run timmx doctor
 uv run timmx --help
 ```
@@ -243,8 +246,6 @@ uv run timmx export executorch resnet18 \
   --output ./artifacts/resnet18_dynamic.pte
 ```
 
-> **Note:** The `executorch` extra requires `torch>=2.10.0` while `litert` requires `torch<2.10.0`. These extras cannot be installed in the same environment.
-
 ### torch.export
 
 ```bash
@@ -305,11 +306,11 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 ## Development
 
 ```bash
-uv sync --extra all --group dev   # install non-conflicting extras + pytest
-uvx ruff format .                 # format
-uvx ruff check .                  # lint
-uv run pytest                     # test
-uv build                          # build
+uv sync --extra onnx --extra coreml --extra ncnn --group dev  # install extras + pytest
+uvx ruff format .                                              # format
+uvx ruff check .                                               # lint
+uv run pytest                                                  # test
+uv build                                                       # build
 ```
 
 ## Adding a New Backend

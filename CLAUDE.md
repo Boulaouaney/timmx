@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ```bash
-uv sync --extra all --group dev           # Install non-conflicting extras + pytest
+uv sync --extra onnx --extra coreml --extra ncnn --group dev  # Install extras + pytest
 uv run pytest                             # Run all tests
 uv run pytest tests/test_cli.py           # Run a single test file
 uv run pytest tests/test_cli.py::test_name  # Run a single test
@@ -24,7 +24,7 @@ uv run pytest tests/test_cli.py::test_name  # Run a single test
 ### Quality gates (run before shipping)
 
 ```bash
-uv sync --extra all --group dev
+uv sync --extra onnx --extra coreml --extra ncnn --group dev
 uvx ruff format .
 uvx ruff check .
 uv run pytest
