@@ -1,4 +1,5 @@
 # timmx
+[![PyPI version](https://img.shields.io/pypi/v/timmx)](https://pypi.org/project/timmx) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Boulaouaney/timmx)
 
 An extensible CLI and Python package for exporting [timm](https://github.com/huggingface/pytorch-image-models) models to various deployment formats. Born out of having too many one-off export scripts for fine-tuned timm models — `timmx` unifies them behind a single command-line interface with a plugin-based backend system.
 
