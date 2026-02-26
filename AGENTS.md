@@ -64,8 +64,9 @@ Runtime nuance:
 - For `coreml`, `--source` selects model capture: `trace` (default, `torch.jit.trace`) or
   `torch-export` (beta, `torch.export.export()` → `run_decompositions({})` → `ct.convert()`).
   With `torch-export`, `ct.convert()` auto-infers shapes from the `ExportedProgram` (no `inputs=`
-  needed), and `--dynamic-batch` requires `--batch-size >= 2`. `--batch-upper-bound` only applies
-  to `trace` source.
+  needed), and `--dynamic-batch` requires `--batch-size >= 2`. `--batch-upper-bound` applies to
+  both sources (sets `max=` on `torch.export.Dim` for torch-export, `ct.RangeDim.upper_bound`
+  for trace).
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
 - For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`.
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).

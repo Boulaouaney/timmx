@@ -134,7 +134,9 @@ class CoreMLBackend(ExportBackend):
             if source == ExportSource.torch_export:
                 dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
                 if dynamic_batch:
-                    dynamic_shapes = ({0: torch.export.Dim("batch")},)
+                    dynamic_shapes = (
+                        {0: torch.export.Dim("batch", max=batch_upper_bound)},
+                    )
 
                 try:
                     exported_program = torch.export.export(
