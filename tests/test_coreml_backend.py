@@ -17,6 +17,7 @@ def _build_kwargs(
     batch_upper_bound: int = 8,
     compute_precision: str | None = None,
     verify: bool = True,
+    source: str = "trace",
 ) -> dict:
     return {
         "model_name": "resnet18",
@@ -30,6 +31,7 @@ def _build_kwargs(
         "dynamic_batch": dynamic_batch,
         "batch_upper_bound": batch_upper_bound,
         "device": "cpu",
+        "source": source,
         "convert_to": convert_to,
         "compute_precision": compute_precision,
         "verify": verify,
@@ -76,6 +78,56 @@ def test_neuralnetwork_rejects_compute_precision(tmp_path: Path) -> None:
         output_path,
         convert_to="neuralnetwork",
         compute_precision="float16",
+    )
+
+    backend = CoreMLBackend()
+    command = backend.create_command()
+    with pytest.raises(ConfigurationError):
+        command(**kwargs)
+
+
+# --- torch-export source tests ---
+
+
+def test_export_coreml_torch_export_source(tmp_path: Path) -> None:
+    """torch-export source produces a valid mlpackage."""
+    output_path = tmp_path / "resnet18_te.mlpackage"
+    kwargs = _build_kwargs(output_path, source="torch-export", compute_precision="float16")
+
+    backend = CoreMLBackend()
+    command = backend.create_command()
+    command(**kwargs)
+
+    assert output_path.exists()
+    loaded_model = ct.models.MLModel(str(output_path), skip_model_load=True)
+    assert type(loaded_model).__name__ == "MLModel"
+
+
+def test_torch_export_dynamic_batch(tmp_path: Path) -> None:
+    """torch-export source with dynamic batch produces a valid model."""
+    output_path = tmp_path / "resnet18_te_dynamic.mlpackage"
+    kwargs = _build_kwargs(
+        output_path,
+        source="torch-export",
+        dynamic_batch=True,
+        batch_size=2,
+    )
+
+    backend = CoreMLBackend()
+    command = backend.create_command()
+    command(**kwargs)
+
+    assert output_path.exists()
+
+
+def test_torch_export_dynamic_batch_requires_batch_ge_2(tmp_path: Path) -> None:
+    """torch-export dynamic batch rejects batch_size=1."""
+    output_path = tmp_path / "resnet18_te_invalid.mlpackage"
+    kwargs = _build_kwargs(
+        output_path,
+        source="torch-export",
+        dynamic_batch=True,
+        batch_size=1,
     )
 
     backend = CoreMLBackend()

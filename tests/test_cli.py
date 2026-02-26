@@ -73,6 +73,7 @@ def test_export_coreml_help_shows_options() -> None:
     assert "--convert-to" in _plain(result.output)
     assert "compute-preci" in _plain(result.output)
     assert "--dynamic-batch" in _plain(result.output)
+    assert "--source" in _plain(result.output)
 
 
 def test_export_litert_help_shows_options() -> None:

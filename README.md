@@ -97,6 +97,17 @@ uv run timmx export coreml resnet18 \
   --output ./artifacts/resnet18.mlpackage
 ```
 
+Using `torch.export` as source (beta):
+
+```bash
+uv run timmx export coreml resnet18 \
+  --pretrained \
+  --source torch-export \
+  --convert-to mlprogram \
+  --compute-precision float16 \
+  --output ./artifacts/resnet18_te.mlpackage
+```
+
 Flexible batch size:
 
 ```bash

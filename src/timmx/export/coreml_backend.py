@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 
+from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
@@ -21,6 +22,11 @@ from timmx.export.common import (
     prepare_export,
 )
 from timmx.export.types import Device
+
+
+class ExportSource(StrEnum):
+    trace = "trace"
+    torch_export = "torch-export"
 
 
 class ConvertTo(StrEnum):
@@ -72,6 +78,10 @@ class CoreMLBackend(ExportBackend):
                 ),
             ] = 8,
             device: DeviceOpt = Device.cpu,
+            source: Annotated[
+                ExportSource,
+                typer.Option(help="Model capture method: trace (default) or torch-export (beta)."),
+            ] = ExportSource.trace,
             convert_to: Annotated[
                 ConvertTo, typer.Option(help="Core ML model type to generate.")
             ] = ConvertTo.mlprogram,
@@ -83,17 +93,29 @@ class CoreMLBackend(ExportBackend):
                 bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
             ] = True,
         ) -> None:
-            if dynamic_batch:
-                if batch_upper_bound < 1:
-                    raise ConfigurationError("--batch-upper-bound must be >= 1.")
-                if batch_upper_bound < batch_size:
-                    raise ConfigurationError("--batch-upper-bound must be >= --batch-size.")
             if convert_to == ConvertTo.neuralnetwork and compute_precision is not None:
                 raise ConfigurationError(
                     "--compute-precision is only supported when --convert-to mlprogram."
                 )
+            if source == ExportSource.trace and dynamic_batch:
+                if batch_upper_bound < 1:
+                    raise ConfigurationError("--batch-upper-bound must be >= 1.")
+                if batch_upper_bound < batch_size:
+                    raise ConfigurationError("--batch-upper-bound must be >= --batch-size.")
+            if source == ExportSource.torch_export and dynamic_batch and batch_size < 2:
+                raise ConfigurationError(
+                    "--dynamic-batch with --source torch-export requires "
+                    "--batch-size >= 2 for stable symbolic shape capture."
+                )
 
             ct = _import_coremltools()
+
+            if source == ExportSource.torch_export:
+                console.print(
+                    "[bold yellow]note:[/bold yellow] torch.export support in coremltools "
+                    "is beta. If conversion fails, try the default --source trace.",
+                    highlight=False,
+                )
 
             prep = prepare_export(
                 model_name=model_name,
@@ -109,36 +131,65 @@ class CoreMLBackend(ExportBackend):
 
             import torch
 
-            with torch.no_grad():
+            if source == ExportSource.torch_export:
+                dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
+                if dynamic_batch:
+                    dynamic_shapes = ({0: torch.export.Dim("batch")},)
+
                 try:
-                    traced_model = torch.jit.trace(prep.model, prep.example_input)
+                    exported_program = torch.export.export(
+                        prep.model,
+                        (prep.example_input,),
+                        dynamic_shapes=dynamic_shapes,
+                    )
+                    # coremltools requires ATEN dialect, not TRAINING
+                    exported_program = exported_program.run_decompositions({})
                 except Exception as exc:
-                    raise ExportError(f"TorchScript trace failed: {exc}") from exc
+                    raise ExportError(f"torch.export capture failed: {exc}") from exc
 
-            input_type = ct.TensorType(
-                name="input",
-                shape=_build_input_shape(
-                    batch_size=batch_size,
-                    dynamic_batch=dynamic_batch,
-                    batch_upper_bound=batch_upper_bound,
-                    input_size=prep.resolved_input_size,
-                    ct=ct,
-                ),
-            )
-            convert_kwargs: dict[str, object] = {
-                "source": "pytorch",
-                "inputs": [input_type],
-                "convert_to": str(convert_to),
-            }
-            if compute_precision is not None:
-                convert_kwargs["compute_precision"] = _map_compute_precision(
-                    str(compute_precision), ct
+                convert_kwargs: dict[str, object] = {
+                    "convert_to": str(convert_to),
+                }
+                if compute_precision is not None:
+                    convert_kwargs["compute_precision"] = _map_compute_precision(
+                        str(compute_precision), ct
+                    )
+
+                try:
+                    coreml_model = ct.convert(exported_program, **convert_kwargs)
+                except Exception as exc:
+                    raise ExportError(f"Core ML conversion failed: {exc}") from exc
+            else:
+                with torch.no_grad():
+                    try:
+                        traced_model = torch.jit.trace(prep.model, prep.example_input)
+                    except Exception as exc:
+                        raise ExportError(f"TorchScript trace failed: {exc}") from exc
+
+                input_type = ct.TensorType(
+                    name="input",
+                    shape=_build_input_shape(
+                        batch_size=batch_size,
+                        dynamic_batch=dynamic_batch,
+                        batch_upper_bound=batch_upper_bound,
+                        input_size=prep.resolved_input_size,
+                        ct=ct,
+                    ),
                 )
+                convert_kwargs: dict[str, object] = {
+                    "source": "pytorch",
+                    "inputs": [input_type],
+                    "convert_to": str(convert_to),
+                }
+                if compute_precision is not None:
+                    convert_kwargs["compute_precision"] = _map_compute_precision(
+                        str(compute_precision), ct
+                    )
 
-            try:
-                coreml_model = ct.convert(traced_model, **convert_kwargs)
-            except Exception as exc:
-                raise ExportError(f"Core ML conversion failed: {exc}") from exc
+                try:
+                    coreml_model = ct.convert(traced_model, **convert_kwargs)
+                except Exception as exc:
+                    raise ExportError(f"Core ML conversion failed: {exc}") from exc
 
             try:
                 coreml_model.save(str(prep.output_path))
