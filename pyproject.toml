@@ -3,7 +3,36 @@ name = "timmx"
 version = "0.2.1"
 description = "Extensible CLI and Python package for exporting timm models."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
+license = "Apache-2.0"
+authors = [{ name = "Youssef Boulaouane", email = "y.boulaouane11@gmail.com" }]
+keywords = [
+  "coreml",
+  "deep-learning",
+  "executorch",
+  "inference",
+  "litert",
+  "model-export",
+  "onnx",
+  "pytorch",
+  "tensorrt",
+  "timm"
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
 dependencies = [
   "rich",
   "timm",
@@ -20,6 +49,11 @@ onnx = ["onnx>=1.16", "onnxscript", "onnxslim"]
 
 [project.scripts]
 timmx = "timmx.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Boulaouaney/timmx"
+Issues = "https://github.com/Boulaouaney/timmx/issues"
+Repository = "https://github.com/Boulaouaney/timmx"
 
 [dependency-groups]
 dev = [
