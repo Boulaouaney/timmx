@@ -17,6 +17,8 @@ def _build_kwargs(
     dynamic_batch: bool = False,
     calibration_data: Path | None = None,
     calibration_steps: int | None = None,
+    calibration_samples: int | None = None,
+    random_calibration: bool = False,
     per_channel: bool = True,
 ) -> dict:
     return {
@@ -35,6 +37,8 @@ def _build_kwargs(
         "dynamic_batch": dynamic_batch,
         "calibration_data": calibration_data,
         "calibration_steps": calibration_steps,
+        "calibration_samples": calibration_samples,
+        "random_calibration": random_calibration,
         "per_channel": per_channel,
     }
 
@@ -111,7 +115,7 @@ def test_export_xnnpack_int8(tmp_path: Path) -> None:
     output = tmp_path / "model_int8.pte"
     backend = ExecuTorchBackend()
     command = backend.create_command()
-    command(**_build_kwargs(output, mode="int8"))
+    command(**_build_kwargs(output, mode="int8", random_calibration=True))
     assert output.exists()
     assert output.stat().st_size > 0
 
@@ -189,6 +193,6 @@ def test_export_coreml_int8(tmp_path: Path) -> None:
     output = tmp_path / "model_coreml_int8.pte"
     backend = ExecuTorchBackend()
     command = backend.create_command()
-    command(**_build_kwargs(output, delegate="coreml", mode="int8"))
+    command(**_build_kwargs(output, delegate="coreml", mode="int8", random_calibration=True))
     assert output.exists()
     assert output.stat().st_size > 0

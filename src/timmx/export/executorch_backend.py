@@ -87,13 +87,41 @@ class ExecuTorchBackend(ExportBackend):
             calibration_data: Annotated[
                 Path | None,
                 typer.Option(
-                    help="Path to a torch-saved calibration tensor (N, C, H, W) for int8."
+                    help=(
+                        "Path to calibration data: an image directory or a "
+                        "torch-saved tensor (N, C, H, W). Required for --mode int8 "
+                        "unless --random-calibration is set."
+                    )
                 ),
             ] = None,
             calibration_steps: Annotated[
                 int | None,
-                typer.Option(help="Number of calibration batches for int8 quantization."),
+                typer.Option(
+                    help=(
+                        "Number of calibration batches to consume. "
+                        "Default is all full batches from --calibration-data."
+                    )
+                ),
             ] = None,
+            calibration_samples: Annotated[
+                int | None,
+                typer.Option(
+                    help=(
+                        "Max number of images to load when --calibration-data is a "
+                        "directory. Default is 128."
+                    )
+                ),
+            ] = None,
+            random_calibration: Annotated[
+                bool,
+                typer.Option(
+                    "--random-calibration",
+                    help=(
+                        "Use random noise for calibration instead of real data. "
+                        "Not recommended for production use."
+                    ),
+                ),
+            ] = False,
             per_channel: Annotated[
                 bool,
                 typer.Option(
@@ -107,10 +135,14 @@ class ExecuTorchBackend(ExportBackend):
                     "--compute-precision is only supported with --delegate coreml."
                 )
             if mode != ExecuTorchMode.int8 and (
-                calibration_data is not None or calibration_steps is not None
+                calibration_data is not None
+                or calibration_steps is not None
+                or calibration_samples is not None
+                or random_calibration
             ):
                 raise ConfigurationError(
-                    "--calibration-data and --calibration-steps are only valid with --mode int8."
+                    "--calibration-data, --calibration-steps, --calibration-samples, "
+                    "and --random-calibration are only valid with --mode int8."
                 )
             if dynamic_batch and batch_size < 2:
                 raise ConfigurationError(
@@ -146,6 +178,8 @@ class ExecuTorchBackend(ExportBackend):
                     batch_size=batch_size,
                     calibration_data=calibration_data,
                     calibration_steps=calibration_steps,
+                    calibration_samples=calibration_samples,
+                    random_calibration=random_calibration,
                     per_channel=per_channel,
                     dynamic_batch=dynamic_batch,
                     delegate=delegate,
@@ -212,6 +246,8 @@ def _export_quantized(
     batch_size: int,
     calibration_data: Path | None,
     calibration_steps: int | None,
+    calibration_samples: int | None,
+    random_calibration: bool,
     per_channel: bool,
     dynamic_batch: bool,
     delegate: ExecuTorchDelegate,
@@ -226,6 +262,9 @@ def _export_quantized(
         batch_size=batch_size,
         input_size=resolved_input_size,
         device=torch_device,
+        model=model,
+        calibration_samples=calibration_samples,
+        random_calibration=random_calibration,
     )
 
     quantizer = _build_quantizer(delegate=delegate, per_channel=per_channel)
