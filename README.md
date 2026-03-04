@@ -119,6 +119,40 @@ uv run timmx export coreml resnet18 \
   --output ./artifacts/resnet18_dynamic.mlpackage
 ```
 
+Weight quantization (post-conversion, applied to model weights):
+
+```bash
+# 8-bit k-means quantization (mlpackage)
+uv run timmx export coreml resnet18 \
+  --pretrained \
+  --convert-to mlprogram \
+  --compute-precision float16 \
+  --int8 \
+  --output ./artifacts/resnet18_int8.mlpackage
+
+# 4-bit k-means quantization (mlpackage only)
+uv run timmx export coreml resnet18 \
+  --pretrained \
+  --convert-to mlprogram \
+  --compute-precision float16 \
+  --int4 \
+  --output ./artifacts/resnet18_int4.mlpackage
+
+# fp16 weight quantization (neuralnetwork)
+uv run timmx export coreml resnet18 \
+  --pretrained \
+  --convert-to neuralnetwork \
+  --half \
+  --output ./artifacts/resnet18_half.mlmodel
+
+# 8-bit k-means quantization (neuralnetwork)
+uv run timmx export coreml resnet18 \
+  --pretrained \
+  --convert-to neuralnetwork \
+  --int8 \
+  --output ./artifacts/resnet18_int8.mlmodel
+```
+
 ### LiteRT / TFLite
 
 Supported modes: `fp32`, `fp16`, `dynamic-int8`, `int8`.
