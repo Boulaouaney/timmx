@@ -89,6 +89,18 @@ class CoreMLBackend(ExportBackend):
                 ComputePrecision | None,
                 typer.Option(help="Precision for mlprogram conversion."),
             ] = None,
+            half: Annotated[
+                bool,
+                typer.Option("--half", help="Quantize weights to float16."),
+            ] = False,
+            int8: Annotated[
+                bool,
+                typer.Option("--int8", help="Quantize weights to 8-bit."),
+            ] = False,
+            int4: Annotated[
+                bool,
+                typer.Option("--int4", help="Quantize weights to 4-bit (mlpackage only)."),
+            ] = False,
             verify: Annotated[
                 bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
             ] = True,
@@ -107,6 +119,12 @@ class CoreMLBackend(ExportBackend):
                     "--dynamic-batch with --source torch-export requires "
                     "--batch-size >= 2 for stable symbolic shape capture."
                 )
+            if sum([half, int8, int4]) > 1:
+                raise ConfigurationError(
+                    "Only one of --half, --int8, --int4 can be specified at a time."
+                )
+            if int4 and convert_to != ConvertTo.mlprogram:
+                raise ConfigurationError("--int4 is only supported with --convert-to mlprogram.")
 
             ct = _import_coremltools()
 
@@ -191,6 +209,16 @@ class CoreMLBackend(ExportBackend):
                 except Exception as exc:
                     raise ExportError(f"Core ML conversion failed: {exc}") from exc
 
+            bits = 4 if int4 else 8 if int8 else 16 if half else 32
+            if bits < 32:
+                is_mlprogram = convert_to == ConvertTo.mlprogram
+                try:
+                    coreml_model = _quantize_weights(
+                        coreml_model, bits=bits, is_mlprogram=is_mlprogram, ct=ct
+                    )
+                except Exception as exc:
+                    raise ExportError(f"Weight quantization failed: {exc}") from exc
+
             try:
                 coreml_model.save(str(prep.output_path))
             except Exception as exc:
@@ -229,6 +257,32 @@ def _map_compute_precision(value: str, ct: object) -> object:
     if value == "float16":
         return ct.precision.FLOAT16
     return ct.precision.FLOAT32
+
+
+def _quantize_weights(coreml_model: object, *, bits: int, is_mlprogram: bool, ct: object) -> object:
+    if not is_mlprogram:
+        # neuralnetwork: linear quantization (no scikit-learn needed)
+        mode = "linear" if bits == 16 else "linear_symmetric"
+        console.print(f"[bold]Quantizing weights to {bits}-bit ({mode})...[/bold]")
+        return ct.models.neural_network.quantization_utils.quantize_weights(
+            coreml_model, bits, mode
+        )
+
+    if bits == 16:
+        console.print(
+            "[bold yellow]note:[/bold yellow] mlprogram models already use float16 weights"
+            " — skipping --half.",
+            highlight=False,
+        )
+        return coreml_model
+
+    # mlprogram: k-means palettization for int8/int4
+    import coremltools.optimize.coreml as cto
+
+    op_config = cto.OpPalettizerConfig(mode="kmeans", nbits=bits, weight_threshold=512)
+    config = cto.OptimizationConfig(global_config=op_config)
+    console.print(f"[bold]Palettizing weights to {bits}-bit (k-means)...[/bold]")
+    return cto.palettize_weights(coreml_model, config)
 
 
 def _import_coremltools() -> object:

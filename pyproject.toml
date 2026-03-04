@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-coreml = ["coremltools>=9.0"]
+coreml = ["coremltools>=9.0", "scikit-learn"]
 executorch = ["executorch>=1.1.0"]
 litert = ["litert-torch>=0.8.0"]
 ncnn = ["pnnx"]

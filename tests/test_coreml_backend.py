@@ -16,6 +16,9 @@ def _build_kwargs(
     batch_size: int = 1,
     batch_upper_bound: int = 8,
     compute_precision: str | None = None,
+    half: bool = False,
+    int8: bool = False,
+    int4: bool = False,
     verify: bool = True,
     source: str = "trace",
 ) -> dict:
@@ -34,6 +37,9 @@ def _build_kwargs(
         "source": source,
         "convert_to": convert_to,
         "compute_precision": compute_precision,
+        "half": half,
+        "int8": int8,
+        "int4": int4,
         "verify": verify,
     }
 
@@ -134,3 +140,79 @@ def test_torch_export_dynamic_batch_requires_batch_ge_2(tmp_path: Path) -> None:
     command = backend.create_command()
     with pytest.raises(ConfigurationError):
         command(**kwargs)
+
+
+# --- quantization validation tests ---
+
+
+def test_quantization_flags_are_mutually_exclusive(tmp_path: Path) -> None:
+    """Only one of --half, --int8, --int4 can be specified."""
+    output_path = tmp_path / "out.mlpackage"
+    kwargs = _build_kwargs(output_path, half=True, int8=True)
+
+    backend = CoreMLBackend()
+    command = backend.create_command()
+    with pytest.raises(ConfigurationError, match="Only one of"):
+        command(**kwargs)
+
+
+def test_int4_rejects_neuralnetwork(tmp_path: Path) -> None:
+    """--int4 is only supported with --convert-to mlprogram."""
+    output_path = tmp_path / "out.mlmodel"
+    kwargs = _build_kwargs(output_path, convert_to="neuralnetwork", int4=True)
+
+    backend = CoreMLBackend()
+    command = backend.create_command()
+    with pytest.raises(ConfigurationError, match="--int4"):
+        command(**kwargs)
+
+
+# --- quantization export tests ---
+
+
+def test_export_coreml_half_neuralnetwork(tmp_path: Path) -> None:
+    """--half with neuralnetwork quantizes weights to float16."""
+    output_path = tmp_path / "resnet18_half.mlmodel"
+    kwargs = _build_kwargs(output_path, convert_to="neuralnetwork", half=True)
+
+    CoreMLBackend().create_command()(**kwargs)
+    assert output_path.exists()
+
+
+def test_export_coreml_int8_neuralnetwork(tmp_path: Path) -> None:
+    """--int8 with neuralnetwork quantizes weights to 8-bit linear_symmetric."""
+    output_path = tmp_path / "resnet18_int8.mlmodel"
+    kwargs = _build_kwargs(output_path, convert_to="neuralnetwork", int8=True)
+
+    CoreMLBackend().create_command()(**kwargs)
+    assert output_path.exists()
+
+
+def test_export_coreml_half_mlprogram_is_noop(tmp_path: Path) -> None:
+    """--half with mlprogram is a no-op (weights are already fp16)."""
+    output_path = tmp_path / "resnet18_half.mlpackage"
+    kwargs = _build_kwargs(output_path, half=True)
+
+    CoreMLBackend().create_command()(**kwargs)
+    assert output_path.exists()
+    ct.models.MLModel(str(output_path), skip_model_load=True)
+
+
+def test_export_coreml_int8_mlprogram(tmp_path: Path) -> None:
+    """--int8 with mlprogram palettizes weights to 8-bit."""
+    output_path = tmp_path / "resnet18_int8.mlpackage"
+    kwargs = _build_kwargs(output_path, compute_precision="float16", int8=True)
+
+    CoreMLBackend().create_command()(**kwargs)
+    assert output_path.exists()
+    ct.models.MLModel(str(output_path), skip_model_load=True)
+
+
+def test_export_coreml_int4_mlprogram(tmp_path: Path) -> None:
+    """--int4 with mlprogram palettizes weights to 4-bit."""
+    output_path = tmp_path / "resnet18_int4.mlpackage"
+    kwargs = _build_kwargs(output_path, compute_precision="float16", int4=True)
+
+    CoreMLBackend().create_command()(**kwargs)
+    assert output_path.exists()
+    ct.models.MLModel(str(output_path), skip_model_load=True)
