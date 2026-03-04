@@ -98,8 +98,9 @@ class TensorRTBackend(ExportBackend):
                 Path | None,
                 typer.Option(
                     help=(
-                        "Path to a torch-saved calibration tensor with shape (N, C, H, W). "
-                        "Required for --mode int8 unless random calibration is acceptable."
+                        "Path to calibration data: an image directory or a "
+                        "torch-saved tensor (N, C, H, W). Required for --mode int8 "
+                        "unless --random-calibration is set."
                     )
                 ),
             ] = None,
@@ -108,11 +109,29 @@ class TensorRTBackend(ExportBackend):
                 typer.Option(
                     help=(
                         "Number of calibration batches to consume. "
-                        "Default is 1 random batch when --calibration-data is not set, "
-                        "or all full batches from --calibration-data when set."
+                        "Default is all full batches from --calibration-data."
                     )
                 ),
             ] = None,
+            calibration_samples: Annotated[
+                int | None,
+                typer.Option(
+                    help=(
+                        "Max number of images to load when --calibration-data is a "
+                        "directory. Default is 128."
+                    )
+                ),
+            ] = None,
+            random_calibration: Annotated[
+                bool,
+                typer.Option(
+                    "--random-calibration",
+                    help=(
+                        "Use random noise for calibration instead of real data. "
+                        "Not recommended for production use."
+                    ),
+                ),
+            ] = False,
             calibration_cache: Annotated[
                 Path | None,
                 typer.Option(help="Path to read/write TensorRT INT8 calibration cache."),
@@ -139,10 +158,13 @@ class TensorRTBackend(ExportBackend):
             if mode != TensorRTMode.int8 and (
                 calibration_data is not None
                 or calibration_steps is not None
+                or calibration_samples is not None
                 or calibration_cache is not None
+                or random_calibration
             ):
                 raise ConfigurationError(
-                    "--calibration-data, --calibration-steps, and --calibration-cache "
+                    "--calibration-data, --calibration-steps, --calibration-samples, "
+                    "--calibration-cache, and --random-calibration "
                     "are only valid with --mode int8."
                 )
 
@@ -237,6 +259,9 @@ class TensorRTBackend(ExportBackend):
                         batch_size=batch_size,
                         input_size=prep.resolved_input_size,
                         device=prep.torch_device,
+                        model_name=model_name,
+                        calibration_samples=calibration_samples,
+                        random_calibration=random_calibration,
                     )
                     config.int8_calibrator = calibrator
 
@@ -311,6 +336,9 @@ def _create_calibrator(
     batch_size: int,
     input_size: tuple[int, int, int],
     device: torch.device,
+    model_name: str,
+    calibration_samples: int | None,
+    random_calibration: bool,
 ) -> object:
     batches = resolve_calibration_batches(
         calibration_data=calibration_data,
@@ -318,6 +346,9 @@ def _create_calibrator(
         batch_size=batch_size,
         input_size=input_size,
         device=device,
+        model_name=model_name,
+        calibration_samples=calibration_samples,
+        random_calibration=random_calibration,
     )
     cache_path = calibration_cache or Path("calibration.cache")
     calibrator_cls = _make_calibrator_class(trt)

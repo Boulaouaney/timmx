@@ -70,8 +70,10 @@ Runtime nuance:
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
 - For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`.
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
-- For `litert` quantized modes, calibration data can be provided via `--calibration-data` as a
-  torch-saved tensor with shape `(N, C, H, W)`.
+- For `litert` (and `tensorrt`, `executorch`) int8 modes, `--calibration-data` accepts either an
+  image directory (timm transforms applied automatically, `--calibration-samples` limits count,
+  default 128) or a torch-saved tensor `(N, C, H, W)`. Int8 requires `--calibration-data` or
+  the explicit `--random-calibration` escape hatch (random noise, not recommended for production).
 - For `ncnn`, `--output` is a directory (not a file); pnnx intermediate files (`model.pt`, `model.pnnx.*`,
   `model_pnnx.py`) and `__pycache__` are removed automatically after export. `--fp16` defaults to `True`.
   Requires `pip install 'timmx[ncnn]'` (installs `pnnx` only; the `ncnn` Python package is not needed

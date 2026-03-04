@@ -129,16 +129,41 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_fp16.tflite
 ```
 
-INT8 with calibration data:
+INT8 with calibration data (point to an image directory — timm transforms are applied automatically):
 
 ```bash
-# generate a calibration tensor
-uv run python -c "import torch; torch.save(torch.randn(64, 3, 224, 224), 'calibration.pt')"
+uv run timmx export litert resnet18 \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --output ./artifacts/resnet18_int8.tflite
+```
 
+Limit the number of calibration images loaded:
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --calibration-samples 64 \
+  --output ./artifacts/resnet18_int8.tflite
+```
+
+A pre-saved torch tensor `(N, C, H, W)` is also accepted:
+
+```bash
 uv run timmx export litert resnet18 \
   --mode int8 \
   --calibration-data ./calibration.pt \
   --calibration-steps 8 \
+  --output ./artifacts/resnet18_int8.tflite
+```
+
+Use `--random-calibration` to skip providing real data (not recommended for production):
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode int8 \
+  --random-calibration \
   --output ./artifacts/resnet18_int8.tflite
 ```
 
@@ -181,14 +206,13 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_fp16.engine
 ```
 
-INT8 with calibration:
+INT8 with calibration (image directory or torch tensor):
 
 ```bash
 uv run timmx export tensorrt resnet18 \
   --pretrained \
   --mode int8 \
-  --calibration-data ./calibration.pt \
-  --calibration-steps 8 \
+  --calibration-data ./my-images/ \
   --output ./artifacts/resnet18_int8.engine
 ```
 
@@ -239,8 +263,7 @@ INT8 quantized with XNNPack:
 uv run timmx export executorch resnet18 \
   --pretrained \
   --mode int8 \
-  --calibration-data ./calibration.pt \
-  --calibration-steps 8 \
+  --calibration-data ./my-images/ \
   --output ./artifacts/resnet18_int8.pte
 ```
 

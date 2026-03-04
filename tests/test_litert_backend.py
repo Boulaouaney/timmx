@@ -27,6 +27,8 @@ def _build_kwargs(
     nhwc_input: bool = False,
     calibration_data: Path | None = None,
     calibration_steps: int | None = None,
+    calibration_samples: int | None = None,
+    random_calibration: bool = False,
     verify: bool = True,
 ) -> dict:
     return {
@@ -42,6 +44,8 @@ def _build_kwargs(
         "mode": mode,
         "calibration_data": calibration_data,
         "calibration_steps": calibration_steps,
+        "calibration_samples": calibration_samples,
+        "random_calibration": random_calibration,
         "nhwc_input": nhwc_input,
         "verify": verify,
     }
@@ -74,7 +78,8 @@ def test_export_litert_modes_include_expected_tensor_types(
     expected_dtype: type[np.generic],
 ) -> None:
     output_path = tmp_path / f"model_{mode}.tflite"
-    kwargs = _build_kwargs(output_path, mode=mode)
+    needs_random_cal = mode in {"dynamic-int8", "int8"}
+    kwargs = _build_kwargs(output_path, mode=mode, random_calibration=needs_random_cal)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = LiteRTBackend()
