@@ -1,11 +1,17 @@
 from pathlib import Path
 
 import pytest
+import timm
 import torch
 from PIL import Image
 
 from timmx.errors import ConfigurationError
 from timmx.export.calibration import resolve_calibration_batches
+
+
+@pytest.fixture()
+def resnet18_model() -> torch.nn.Module:
+    return timm.create_model("resnet18", pretrained=False).eval()
 
 
 def test_random_calibration_defaults_to_single_batch() -> None:
@@ -65,7 +71,7 @@ def test_file_calibration_rejects_input_shape_mismatch(tmp_path: Path) -> None:
         )
 
 
-def test_image_dir_calibration(tmp_path: Path) -> None:
+def test_image_dir_calibration(tmp_path: Path, resnet18_model: torch.nn.Module) -> None:
     """Loading calibration images from a directory applies timm transforms."""
     img_dir = tmp_path / "images"
     img_dir.mkdir()
@@ -79,7 +85,7 @@ def test_image_dir_calibration(tmp_path: Path) -> None:
         batch_size=4,
         input_size=(3, 224, 224),
         device=torch.device("cpu"),
-        model_name="resnet18",
+        model=resnet18_model,
     )
 
     assert len(batches) == 2
@@ -87,7 +93,9 @@ def test_image_dir_calibration(tmp_path: Path) -> None:
     assert batches[0].dtype == torch.float32
 
 
-def test_image_dir_calibration_samples_limit(tmp_path: Path) -> None:
+def test_image_dir_calibration_samples_limit(
+    tmp_path: Path, resnet18_model: torch.nn.Module
+) -> None:
     """--calibration-samples limits how many images are loaded."""
     img_dir = tmp_path / "images"
     img_dir.mkdir()
@@ -101,7 +109,7 @@ def test_image_dir_calibration_samples_limit(tmp_path: Path) -> None:
         batch_size=2,
         input_size=(3, 224, 224),
         device=torch.device("cpu"),
-        model_name="resnet18",
+        model=resnet18_model,
         calibration_samples=6,
     )
 
@@ -109,7 +117,7 @@ def test_image_dir_calibration_samples_limit(tmp_path: Path) -> None:
     assert len(batches) == 3
 
 
-def test_image_dir_recursive(tmp_path: Path) -> None:
+def test_image_dir_recursive(tmp_path: Path, resnet18_model: torch.nn.Module) -> None:
     """Images in subdirectories (ImageFolder layout) are found."""
     img_dir = tmp_path / "dataset"
     for cls in ("cat", "dog"):
@@ -125,14 +133,14 @@ def test_image_dir_recursive(tmp_path: Path) -> None:
         batch_size=2,
         input_size=(3, 224, 224),
         device=torch.device("cpu"),
-        model_name="resnet18",
+        model=resnet18_model,
     )
 
     # 6 images / batch_size 2 = 3 batches
     assert len(batches) == 3
 
 
-def test_image_dir_empty_raises(tmp_path: Path) -> None:
+def test_image_dir_empty_raises(tmp_path: Path, resnet18_model: torch.nn.Module) -> None:
     """Empty directory raises ConfigurationError."""
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
@@ -144,7 +152,7 @@ def test_image_dir_empty_raises(tmp_path: Path) -> None:
             batch_size=1,
             input_size=(3, 224, 224),
             device=torch.device("cpu"),
-            model_name="resnet18",
+            model=resnet18_model,
         )
 
 

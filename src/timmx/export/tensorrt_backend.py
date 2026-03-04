@@ -259,7 +259,7 @@ class TensorRTBackend(ExportBackend):
                         batch_size=batch_size,
                         input_size=prep.resolved_input_size,
                         device=prep.torch_device,
-                        model_name=model_name,
+                        model=prep.model,
                         calibration_samples=calibration_samples,
                         random_calibration=random_calibration,
                     )
@@ -336,7 +336,7 @@ def _create_calibrator(
     batch_size: int,
     input_size: tuple[int, int, int],
     device: torch.device,
-    model_name: str,
+    model: torch.nn.Module,
     calibration_samples: int | None,
     random_calibration: bool,
 ) -> object:
@@ -346,7 +346,7 @@ def _create_calibrator(
         batch_size=batch_size,
         input_size=input_size,
         device=device,
-        model_name=model_name,
+        model=model,
         calibration_samples=calibration_samples,
         random_calibration=random_calibration,
     )

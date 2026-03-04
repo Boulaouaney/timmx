@@ -159,7 +159,7 @@ class LiteRTBackend(ExportBackend):
                     batch_size=batch_size,
                     input_size=prep.resolved_input_size,
                     device=prep.torch_device,
-                    model_name=model_name,
+                    model=prep.model,
                     calibration_samples=calibration_samples,
                     random_calibration=random_calibration,
                 )

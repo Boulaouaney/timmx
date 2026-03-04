@@ -19,7 +19,7 @@ def resolve_calibration_batches(
     batch_size: int,
     input_size: tuple[int, int, int],
     device: torch.device,
-    model_name: str | None = None,
+    model: torch.nn.Module | None = None,
     calibration_samples: int | None = None,
     random_calibration: bool = False,
 ) -> list[torch.Tensor]:
@@ -47,13 +47,13 @@ def resolve_calibration_batches(
     resolved_path = calibration_data.expanduser().resolve()
 
     if resolved_path.is_dir():
-        if model_name is None:
+        if model is None:
             raise ConfigurationError(
-                "model_name is required when loading calibration images from a directory."
+                "model is required when loading calibration images from a directory."
             )
         data_tensor = _load_calibration_images(
             image_dir=resolved_path,
-            model_name=model_name,
+            model=model,
             input_size=input_size,
             max_samples=calibration_samples or DEFAULT_CALIBRATION_SAMPLES,
         )
@@ -131,7 +131,7 @@ def _collect_image_paths(image_dir: Path) -> list[Path]:
 def _load_calibration_images(
     *,
     image_dir: Path,
-    model_name: str,
+    model: torch.nn.Module,
     input_size: tuple[int, int, int],
     max_samples: int,
 ) -> torch.Tensor:
@@ -144,7 +144,7 @@ def _load_calibration_images(
         rng = random.Random(42)
         image_paths = rng.sample(image_paths, max_samples)
 
-    data_config = resolve_data_config(model=model_name)
+    data_config = resolve_data_config(model=model)
     data_config["input_size"] = input_size
     transform = create_transform(**data_config, is_training=False)
 
