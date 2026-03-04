@@ -180,12 +180,22 @@ def test_export_coreml_half_neuralnetwork(tmp_path: Path) -> None:
 
 
 def test_export_coreml_int8_neuralnetwork(tmp_path: Path) -> None:
-    """--int8 with neuralnetwork quantizes weights to 8-bit k-means."""
+    """--int8 with neuralnetwork quantizes weights to 8-bit linear_symmetric."""
     output_path = tmp_path / "resnet18_int8.mlmodel"
     kwargs = _build_kwargs(output_path, convert_to="neuralnetwork", int8=True)
 
     CoreMLBackend().create_command()(**kwargs)
     assert output_path.exists()
+
+
+def test_export_coreml_half_mlprogram_is_noop(tmp_path: Path) -> None:
+    """--half with mlprogram is a no-op (weights are already fp16)."""
+    output_path = tmp_path / "resnet18_half.mlpackage"
+    kwargs = _build_kwargs(output_path, half=True)
+
+    CoreMLBackend().create_command()(**kwargs)
+    assert output_path.exists()
+    ct.models.MLModel(str(output_path), skip_model_load=True)
 
 
 def test_export_coreml_int8_mlprogram(tmp_path: Path) -> None:

@@ -95,11 +95,11 @@ class CoreMLBackend(ExportBackend):
             ] = False,
             int8: Annotated[
                 bool,
-                typer.Option("--int8", help="Quantize weights to 8-bit (k-means)."),
+                typer.Option("--int8", help="Quantize weights to 8-bit."),
             ] = False,
             int4: Annotated[
                 bool,
-                typer.Option("--int4", help="Quantize weights to 4-bit (k-means, mlpackage only)."),
+                typer.Option("--int4", help="Quantize weights to 4-bit (mlpackage only)."),
             ] = False,
             verify: Annotated[
                 bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
@@ -212,9 +212,12 @@ class CoreMLBackend(ExportBackend):
             bits = 4 if int4 else 8 if int8 else 16 if half else 32
             if bits < 32:
                 is_mlprogram = convert_to == ConvertTo.mlprogram
-                coreml_model = _quantize_weights(
-                    coreml_model, bits=bits, is_mlprogram=is_mlprogram, ct=ct
-                )
+                try:
+                    coreml_model = _quantize_weights(
+                        coreml_model, bits=bits, is_mlprogram=is_mlprogram, ct=ct
+                    )
+                except Exception as exc:
+                    raise ExportError(f"Weight quantization failed: {exc}") from exc
 
             try:
                 coreml_model.save(str(prep.output_path))
