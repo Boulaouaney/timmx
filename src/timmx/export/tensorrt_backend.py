@@ -350,7 +350,7 @@ def _create_calibrator(
         calibration_samples=calibration_samples,
         random_calibration=random_calibration,
     )
-    cache_path = calibration_cache or Path("calibration.cache")
+    cache_path = calibration_cache or Path("tensorrt_calibration.cache")
     calibrator_cls = _make_calibrator_class(trt)
     return calibrator_cls(batches=batches, cache_path=cache_path)
 
