@@ -29,7 +29,9 @@ def _build_kwargs(
     opset: int = 18,
     calibration_data: Path | None = None,
     calibration_steps: int | None = None,
+    calibration_samples: int | None = None,
     calibration_cache: Path | None = None,
+    random_calibration: bool = False,
     keep_onnx: bool = False,
     verbose: bool = False,
 ) -> dict:
@@ -51,7 +53,9 @@ def _build_kwargs(
         "batch_max": batch_max,
         "calibration_data": calibration_data,
         "calibration_steps": calibration_steps,
+        "calibration_samples": calibration_samples,
         "calibration_cache": calibration_cache,
+        "random_calibration": random_calibration,
         "keep_onnx": keep_onnx,
         "verbose": verbose,
     }
@@ -268,7 +272,7 @@ def test_export_tensorrt_dynamic_batch(tmp_path: Path, monkeypatch: pytest.Monke
 @requires_onnxscript
 def test_export_tensorrt_int8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
-    kwargs = _build_kwargs(output_path, mode="int8")
+    kwargs = _build_kwargs(output_path, mode="int8", random_calibration=True)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = TensorRTBackend()

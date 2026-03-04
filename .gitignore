@@ -27,3 +27,4 @@ uv.lock
 *_pnnx.py
 
 *.engine
+*.cache

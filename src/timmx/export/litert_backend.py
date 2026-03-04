@@ -67,8 +67,9 @@ class LiteRTBackend(ExportBackend):
                 Path | None,
                 typer.Option(
                     help=(
-                        "Path to a torch-saved calibration tensor with shape (N, C, H, W). "
-                        "Used by quantized export modes."
+                        "Path to calibration data: an image directory or a "
+                        "torch-saved tensor (N, C, H, W). Required for int8 modes "
+                        "unless --random-calibration is set."
                     )
                 ),
             ] = None,
@@ -77,11 +78,29 @@ class LiteRTBackend(ExportBackend):
                 typer.Option(
                     help=(
                         "Number of calibration batches to consume. "
-                        "Default is 1 random batch when --calibration-data is not set, "
-                        "or all full batches from --calibration-data when set."
+                        "Default is all full batches from --calibration-data."
                     )
                 ),
             ] = None,
+            calibration_samples: Annotated[
+                int | None,
+                typer.Option(
+                    help=(
+                        "Max number of images to load when --calibration-data is a "
+                        "directory. Default is 128."
+                    )
+                ),
+            ] = None,
+            random_calibration: Annotated[
+                bool,
+                typer.Option(
+                    "--random-calibration",
+                    help=(
+                        "Use random noise for calibration instead of real data. "
+                        "Not recommended for production use."
+                    ),
+                ),
+            ] = False,
             nhwc_input: Annotated[
                 bool,
                 typer.Option(help="Expose the first model input as NHWC instead of NCHW."),
@@ -97,10 +116,14 @@ class LiteRTBackend(ExportBackend):
                     "LiteRT int8 modes currently require --device cpu for PT2E quantization."
                 )
             if mode not in int8_modes and (
-                calibration_data is not None or calibration_steps is not None
+                calibration_data is not None
+                or calibration_steps is not None
+                or calibration_samples is not None
+                or random_calibration
             ):
                 raise ConfigurationError(
-                    "--calibration-data and --calibration-steps are only valid with "
+                    "--calibration-data, --calibration-steps, --calibration-samples, "
+                    "and --random-calibration are only valid with "
                     "--mode dynamic-int8 or --mode int8."
                 )
 
@@ -136,6 +159,9 @@ class LiteRTBackend(ExportBackend):
                     batch_size=batch_size,
                     input_size=prep.resolved_input_size,
                     device=prep.torch_device,
+                    model=prep.model,
+                    calibration_samples=calibration_samples,
+                    random_calibration=random_calibration,
                 )
                 example_input = calibration_batches[0]
                 convert_module, quant_config = _prepare_pt2e_quantized_module(
