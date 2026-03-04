@@ -156,6 +156,19 @@ def test_image_dir_empty_raises(tmp_path: Path, resnet18_model: torch.nn.Module)
         )
 
 
+@pytest.mark.parametrize("bad_value", [0, -1, -5])
+def test_calibration_samples_rejects_invalid_values(bad_value: int) -> None:
+    with pytest.raises(ConfigurationError, match="--calibration-samples must be >= 1"):
+        resolve_calibration_batches(
+            calibration_data=Path("."),
+            calibration_steps=None,
+            batch_size=1,
+            input_size=(3, 224, 224),
+            device=torch.device("cpu"),
+            calibration_samples=bad_value,
+        )
+
+
 def test_nonexistent_path_raises() -> None:
     with pytest.raises(ConfigurationError, match="does not exist"):
         resolve_calibration_batches(

@@ -26,6 +26,9 @@ def resolve_calibration_batches(
     if calibration_steps is not None and calibration_steps < 1:
         raise ConfigurationError("--calibration-steps must be >= 1.")
 
+    if calibration_samples is not None and calibration_samples < 1:
+        raise ConfigurationError("--calibration-samples must be >= 1.")
+
     if calibration_data is None:
         if not random_calibration:
             raise ConfigurationError(
@@ -155,8 +158,9 @@ def _load_calibration_images(
             img = Image.open(path).convert("RGB")
             tensor = transform(img)
             tensors.append(tensor)
-        except Exception:
+        except Exception as exc:
             skipped += 1
+            console.print(f"[dim]  Skipped {path.name}: {exc}[/dim]")
             continue
 
     if not tensors:
