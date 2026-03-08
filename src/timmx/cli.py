@@ -204,7 +204,7 @@ def list_models(
     """List available timm models."""
     import timm
 
-    pattern = query if ("*" in query or "?" in query) else f"*{query}*"
+    pattern = query if any(c in query for c in "*?[") else f"*{query}*"
     models = timm.list_models(pattern, pretrained=pretrained_only)
     for name in models:
         console.print(name, highlight=False)
