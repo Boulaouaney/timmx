@@ -113,6 +113,7 @@ def prepare_export(
 
     if softmax or normalize:
         model = wrap_with_preprocessing(model, softmax=softmax)
+        model = model.to(torch_device)
 
     example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
 
@@ -157,7 +158,7 @@ class PrePostWrapper(torch.nn.Module):
 def wrap_with_preprocessing(
     model: torch.nn.Module,
     softmax: bool = False,
-) -> torch.nn.Module:
+) -> PrePostWrapper:
     """Wrap model with timm's normalization config and optional softmax."""
     config = resolve_data_config(model=model)
     mean = config.get("mean", (0.485, 0.456, 0.406))
