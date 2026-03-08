@@ -208,7 +208,9 @@ def list_models(
     models = timm.list_models(pattern, pretrained=pretrained_only)
     for name in models:
         console.print(name, highlight=False)
-    console.print(f"\nFound {len(models)} models")
+    console.print()
+    label = "model" if len(models) == 1 else "models"
+    console.print(f"Found {len(models)} {label}")
 
 
 def main() -> None:
