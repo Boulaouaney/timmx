@@ -91,7 +91,7 @@ uv run timmx export onnx resnet18 \
   --output ./artifacts/resnet18_with_preprocess.onnx
 ```
 
-> `--normalize` embeds the timm model's mean/std normalization into the graph. `--softmax` adds a softmax layer on the output (implies `--normalize`). This makes the exported model self-contained — no separate preprocessing needed at inference time.
+> `--normalize` embeds the timm model's mean/std normalization into the graph. `--softmax` adds a softmax layer on the output (implies `--normalize`). This makes the exported model self-contained — no separate preprocessing needed at inference time. For fine-tuned models with custom normalization, override with `--mean 0.5 0.5 0.5 --std 0.5 0.5 0.5`.
 
 Exported models are automatically optimized with [onnxslim](https://github.com/inisis/OnnxSlim) (constant folding, dead-code elimination, operator fusion). To skip optimization:
 
@@ -193,6 +193,16 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_int8.tflite
 ```
 
+For fine-tuned models with custom normalization, override calibration preprocessing with `--mean` / `--std`:
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_int8.tflite
+```
+
 A pre-saved torch tensor `(N, C, H, W)` is also accepted:
 
 ```bash
@@ -261,6 +271,17 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_int8.engine
 ```
 
+Override calibration normalization for fine-tuned models with `--mean` / `--std`:
+
+```bash
+uv run timmx export tensorrt resnet18 \
+  --pretrained \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_int8.engine
+```
+
 Dynamic batch size:
 
 ```bash
@@ -312,6 +333,17 @@ uv run timmx export executorch resnet18 \
   --output ./artifacts/resnet18_int8.pte
 ```
 
+Override calibration normalization for fine-tuned models with `--mean` / `--std`:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_int8.pte
+```
+
 INT8 quantized with CoreML:
 
 ```bash
@@ -359,6 +391,16 @@ uv run timmx export torchscript resnet18 \
   --pretrained \
   --normalize \
   --output ./artifacts/resnet18_normalized.pt
+```
+
+For fine-tuned models with custom normalization, override with `--mean` / `--std`:
+
+```bash
+uv run timmx export torchscript resnet18 \
+  --pretrained \
+  --normalize \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_custom_norm.pt
 ```
 
 Use `torch.jit.script` instead of the default `trace`:

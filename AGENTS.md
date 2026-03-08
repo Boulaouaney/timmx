@@ -38,7 +38,7 @@ Current built-in backends:
 - Export backend interface: `src/timmx/export/base.py` (`ExportBackend` ABC, `DependencyStatus`)
 - Backend registry: `src/timmx/export/registry.py`
 - Backend implementations: `src/timmx/export/<format>_backend.py`
-- Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping and `wrap_with_preprocessing()` helper)
+- Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping, `wrap_with_preprocessing()` helper, and `MeanOpt`/`StdOpt`/`NormalizeOpt`/`SoftmaxOpt` Typer type aliases)
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `doctor` diagnostic command)
 - Tests: `tests/`
@@ -74,6 +74,8 @@ Runtime nuance:
   image directory (timm transforms applied automatically, `--calibration-samples` limits count,
   default 128) or a torch-saved tensor `(N, C, H, W)`. Int8 requires `--calibration-data` or
   the explicit `--random-calibration` escape hatch (random noise, not recommended for production).
+  `--mean`/`--std` override the timm data config for calibration image normalization (useful for
+  fine-tuned models trained with custom normalization).
 - For `ncnn`, `--output` is a directory (not a file); pnnx intermediate files (`model.pt`, `model.pnnx.*`,
   `model_pnnx.py`) and `__pycache__` are removed automatically after export. `--fp16` defaults to `True`.
   Requires `pip install 'timmx[ncnn]'` (installs `pnnx` only; the `ncnn` Python package is not needed
@@ -93,8 +95,10 @@ Runtime nuance:
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
 - For `onnx` and `torchscript`, `--normalize` wraps the model with timm's mean/std normalization
   (via `PrePostWrapper` in `common.py`), so exported models accept unnormalized `[0, 1]` float input.
-  `--softmax` adds a softmax output layer and implies `--normalize`. Other backends can adopt these
-  flags by passing `normalize`/`softmax` to `prepare_export()`.
+  `--softmax` adds a softmax output layer and implies `--normalize`. `--mean`/`--std` override the
+  timm data config for both wrapper normalization and calibration preprocessing. Other backends can
+  adopt these flags by passing `normalize`/`softmax`/`mean`/`std` to `prepare_export()` and/or
+  `resolve_calibration_batches()`.
 
 ## Adding a New Export Backend
 
