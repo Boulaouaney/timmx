@@ -4,7 +4,6 @@ import functools
 import logging
 import os
 import warnings
-from pathlib import Path
 
 import typer
 
@@ -13,6 +12,13 @@ from timmx.console import console
 from timmx.errors import TimmxError
 from timmx.export import BackendRegistry, DependencyStatus, create_builtin_registry
 from timmx.export.base import ExportBackend
+from timmx.export.common import (
+    CheckpointOpt,
+    InChansOpt,
+    ModelNameArg,
+    NumClassesOpt,
+    PretrainedOpt,
+)
 
 app = typer.Typer(
     name="timmx", help="Export timm models to deployment formats.", no_args_is_help=True
@@ -132,13 +138,11 @@ def _format_param_count(n: int) -> str:
 
 @app.command()
 def info(
-    model_name: str = typer.Argument(help="timm model name, e.g. resnet18"),
-    pretrained: bool = typer.Option(False, "--pretrained", help="Load timm pretrained weights."),
-    checkpoint: Path | None = typer.Option(None, help="Path to a fine-tuned checkpoint."),
-    num_classes: int | None = typer.Option(
-        None, help="Override the model classifier output classes."
-    ),
-    in_chans: int | None = typer.Option(None, help="Override model input channels."),
+    model_name: ModelNameArg,
+    pretrained: PretrainedOpt = False,
+    checkpoint: CheckpointOpt = None,
+    num_classes: NumClassesOpt = None,
+    in_chans: InChansOpt = None,
 ) -> None:
     """Show model metadata without exporting."""
     from rich.table import Table
@@ -163,7 +167,7 @@ def info(
 
     # Determine weights status
     if checkpoint is not None:
-        weights_info = f"checkpoint ({Path(checkpoint).name})"
+        weights_info = f"checkpoint ({checkpoint.name})"
     elif pretrained:
         weights_info = "pretrained"
     else:
@@ -179,8 +183,12 @@ def info(
     if trainable_params != total_params:
         table.add_row("Trainable", _format_param_count(trainable_params))
     table.add_row("Input size", f"{input_size[0]} x {input_size[1]} x {input_size[2]}")
-    table.add_row("Classes", str(model.num_classes))
-    table.add_row("Feature dim", str(model.num_features))
+    num_cls = getattr(model, "num_classes", None)
+    if num_cls is not None:
+        table.add_row("Classes", str(num_cls))
+    num_feat = getattr(model, "num_features", None)
+    if num_feat is not None:
+        table.add_row("Feature dim", str(num_feat))
     table.add_row("Weights", weights_info)
 
     console.print(table)

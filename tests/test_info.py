@@ -28,7 +28,7 @@ def test_info_resnet18() -> None:
 
 
 def test_info_pretrained_flag() -> None:
-    """Verify --pretrained is reflected in the weights row (no actual download)."""
+    """Verify --pretrained is reflected in the weights row."""
     result = runner.invoke(app, ["info", "resnet18", "--pretrained"])
     assert result.exit_code == 0
     output = _plain(result.output)
