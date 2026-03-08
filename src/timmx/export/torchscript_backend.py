@@ -16,9 +16,11 @@ from timmx.export.common import (
     InChansOpt,
     InputSizeOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    SoftmaxOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -52,6 +54,8 @@ class TorchScriptBackend(ExportBackend):
                 bool,
                 typer.Option(help="Load the saved model after export and run a forward pass."),
             ] = True,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
         ) -> None:
             prep = prepare_export(
                 model_name=model_name,
@@ -63,6 +67,8 @@ class TorchScriptBackend(ExportBackend):
                 batch_size=batch_size,
                 input_size=input_size,
                 device=device,
+                normalize=normalize,
+                softmax=softmax,
             )
 
             try:

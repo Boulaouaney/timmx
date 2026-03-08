@@ -13,6 +13,25 @@ from timm.utils import reparameterize_model
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.types import Device
 
+# ---------------------------------------------------------------------------
+# Typer type aliases for --normalize / --softmax CLI flags
+# ---------------------------------------------------------------------------
+
+NormalizeOpt = Annotated[
+    bool,
+    typer.Option(
+        "--normalize",
+        help="Wrap model with input normalization (mean/std from timm config).",
+    ),
+]
+SoftmaxOpt = Annotated[
+    bool,
+    typer.Option(
+        "--softmax",
+        help="Add softmax output layer (implies --normalize).",
+    ),
+]
+
 DEFAULT_INPUT_SIZE = (3, 224, 224)
 
 # ---------------------------------------------------------------------------
@@ -62,6 +81,8 @@ def prepare_export(
     input_size: tuple[int, int, int] | None,
     device: Device | str,
     output_is_dir: bool = False,
+    normalize: bool = False,
+    softmax: bool = False,
 ) -> PreparedExport:
     """Validate common args, create the timm model, and build an example input.
 
@@ -90,6 +111,9 @@ def prepare_export(
     model = model.to(torch_device)
     model.eval()
 
+    if softmax or normalize:
+        model = wrap_with_preprocessing(model, softmax=softmax)
+
     example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
 
     return PreparedExport(
@@ -101,7 +125,46 @@ def prepare_export(
     )
 
 
-# TODO: add preprocessing (norm) & postprocessing (softmax) wrapper
+# ---------------------------------------------------------------------------
+# Preprocessing / postprocessing wrapper
+# ---------------------------------------------------------------------------
+
+
+class PrePostWrapper(torch.nn.Module):
+    """Wraps a model with input normalization and optional softmax output."""
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        mean: tuple[float, ...],
+        std: tuple[float, ...],
+        softmax: bool = False,
+    ):
+        super().__init__()
+        self.model = model
+        self.register_buffer("mean", torch.tensor(mean).reshape(1, -1, 1, 1))
+        self.register_buffer("std", torch.tensor(std).reshape(1, -1, 1, 1))
+        self.softmax = softmax
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = (x - self.mean) / self.std
+        x = self.model(x)
+        if self.softmax:
+            x = torch.nn.functional.softmax(x, dim=-1)
+        return x
+
+
+def wrap_with_preprocessing(
+    model: torch.nn.Module,
+    softmax: bool = False,
+) -> torch.nn.Module:
+    """Wrap model with timm's normalization config and optional softmax."""
+    config = resolve_data_config(model=model)
+    mean = config.get("mean", (0.485, 0.456, 0.406))
+    std = config.get("std", (0.229, 0.224, 0.225))
+    return PrePostWrapper(model, mean=mean, std=std, softmax=softmax)
+
+
 def create_timm_model(
     model_name: str,
     *,
