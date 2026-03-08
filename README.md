@@ -82,6 +82,17 @@ uv run timmx export onnx resnet18 \
   --output ./artifacts/resnet18_finetuned.onnx
 ```
 
+Export with built-in normalization and softmax (the model will expect unnormalized `[0, 1]` float input and output probabilities):
+
+```bash
+uv run timmx export onnx resnet18 \
+  --pretrained \
+  --normalize --softmax \
+  --output ./artifacts/resnet18_with_preprocess.onnx
+```
+
+> `--normalize` embeds the timm model's mean/std normalization into the graph. `--softmax` adds a softmax layer on the output (implies `--normalize`). This makes the exported model self-contained — no separate preprocessing needed at inference time.
+
 Exported models are automatically optimized with [onnxslim](https://github.com/inisis/OnnxSlim) (constant folding, dead-code elimination, operator fusion). To skip optimization:
 
 ```bash
@@ -339,6 +350,15 @@ uv run timmx export torch-export resnet18 \
 uv run timmx export torchscript resnet18 \
   --pretrained \
   --output ./artifacts/resnet18.pt
+```
+
+Export with built-in normalization (model accepts unnormalized `[0, 1]` float input):
+
+```bash
+uv run timmx export torchscript resnet18 \
+  --pretrained \
+  --normalize \
+  --output ./artifacts/resnet18_normalized.pt
 ```
 
 Use `torch.jit.script` instead of the default `trace`:

@@ -38,7 +38,7 @@ Current built-in backends:
 - Export backend interface: `src/timmx/export/base.py` (`ExportBackend` ABC, `DependencyStatus`)
 - Backend registry: `src/timmx/export/registry.py`
 - Backend implementations: `src/timmx/export/<format>_backend.py`
-- Shared model helpers: `src/timmx/export/common.py`
+- Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping and `wrap_with_preprocessing()` helper)
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `doctor` diagnostic command)
 - Tests: `tests/`
@@ -91,6 +91,10 @@ Runtime nuance:
 - For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
+- For `onnx` and `torchscript`, `--normalize` wraps the model with timm's mean/std normalization
+  (via `PrePostWrapper` in `common.py`), so exported models accept unnormalized `[0, 1]` float input.
+  `--softmax` adds a softmax output layer and implies `--normalize`. Other backends can adopt these
+  flags by passing `normalize`/`softmax` to `prepare_export()`.
 
 ## Adding a New Export Backend
 
