@@ -14,12 +14,14 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
     NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
     SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -70,6 +72,8 @@ class OnnxBackend(ExportBackend):
             ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             if opset < 7:
                 raise ConfigurationError("--opset must be >= 7.")
@@ -86,6 +90,8 @@ class OnnxBackend(ExportBackend):
                 device=device,
                 normalize=normalize,
                 softmax=softmax,
+                mean=mean,
+                std=std,
             )
 
             export_kwargs: dict[str, object] = {

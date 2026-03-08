@@ -31,6 +31,14 @@ SoftmaxOpt = Annotated[
         help="Add softmax output layer (implies --normalize).",
     ),
 ]
+MeanOpt = Annotated[
+    tuple[float, float, float] | None,
+    typer.Option(help="Custom normalization mean (3 values, one per RGB channel)."),
+]
+StdOpt = Annotated[
+    tuple[float, float, float] | None,
+    typer.Option(help="Custom normalization std (3 values, one per RGB channel)."),
+]
 
 DEFAULT_INPUT_SIZE = (3, 224, 224)
 
@@ -83,6 +91,8 @@ def prepare_export(
     output_is_dir: bool = False,
     normalize: bool = False,
     softmax: bool = False,
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
 ) -> PreparedExport:
     """Validate common args, create the timm model, and build an example input.
 
@@ -91,6 +101,9 @@ def prepare_export(
     otherwise its parent directory is created.
     """
     validate_common_args(batch_size=batch_size, device=device)
+
+    if (mean is not None or std is not None) and not (normalize or softmax):
+        raise ConfigurationError("--mean/--std require --normalize or --softmax.")
 
     output_path = Path(output).expanduser().resolve()
     if output_is_dir:
@@ -112,7 +125,7 @@ def prepare_export(
     model.eval()
 
     if softmax or normalize:
-        model = wrap_with_preprocessing(model, softmax=softmax)
+        model = wrap_with_preprocessing(model, softmax=softmax, mean=mean, std=std)
         model = model.to(torch_device)
 
     example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
@@ -158,12 +171,17 @@ class PrePostWrapper(torch.nn.Module):
 def wrap_with_preprocessing(
     model: torch.nn.Module,
     softmax: bool = False,
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
 ) -> PrePostWrapper:
-    """Wrap model with timm's normalization config and optional softmax."""
+    """Wrap model with normalization and optional softmax.
+
+    Uses timm's data config by default; pass *mean*/*std* to override.
+    """
     config = resolve_data_config(model=model)
-    mean = config.get("mean", (0.485, 0.456, 0.406))
-    std = config.get("std", (0.229, 0.224, 0.225))
-    return PrePostWrapper(model, mean=mean, std=std, softmax=softmax)
+    effective_mean = mean or config.get("mean", (0.485, 0.456, 0.406))
+    effective_std = std or config.get("std", (0.229, 0.224, 0.225))
+    return PrePostWrapper(model, mean=effective_mean, std=effective_std, softmax=softmax)
 
 
 def create_timm_model(

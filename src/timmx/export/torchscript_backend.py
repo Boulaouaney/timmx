@@ -15,12 +15,14 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
     NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
     SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -56,6 +58,8 @@ class TorchScriptBackend(ExportBackend):
             ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             prep = prepare_export(
                 model_name=model_name,
@@ -69,6 +73,8 @@ class TorchScriptBackend(ExportBackend):
                 device=device,
                 normalize=normalize,
                 softmax=softmax,
+                mean=mean,
+                std=std,
             )
 
             try:

@@ -94,3 +94,41 @@ def test_wrap_with_preprocessing_softmax() -> None:
     wrapped = wrap_with_preprocessing(model, softmax=True)
     assert isinstance(wrapped, PrePostWrapper)
     assert wrapped.softmax is True
+
+
+def test_wrap_with_preprocessing_custom_mean_std() -> None:
+    """Custom mean/std override timm config."""
+    model = _make_simple_model()
+    custom_mean = (0.5, 0.5, 0.5)
+    custom_std = (0.5, 0.5, 0.5)
+    wrapped = wrap_with_preprocessing(model, mean=custom_mean, std=custom_std)
+    assert isinstance(wrapped, PrePostWrapper)
+
+    mean_buf = wrapped.mean.squeeze().tolist()
+    std_buf = wrapped.std.squeeze().tolist()
+    for a, b in zip(mean_buf, custom_mean):
+        assert abs(a - b) < 1e-6
+    for a, b in zip(std_buf, custom_std):
+        assert abs(a - b) < 1e-6
+
+
+def test_prepostwrapper_custom_mean_std_output() -> None:
+    """Wrapper with custom mean/std produces different output than default."""
+    model = _make_simple_model()
+    default_mean = (0.485, 0.456, 0.406)
+    default_std = (0.229, 0.224, 0.225)
+    custom_mean = (0.5, 0.5, 0.5)
+    custom_std = (0.5, 0.5, 0.5)
+
+    default_wrapper = PrePostWrapper(model, mean=default_mean, std=default_std)
+    custom_wrapper = PrePostWrapper(model, mean=custom_mean, std=custom_std)
+    default_wrapper.eval()
+    custom_wrapper.eval()
+
+    x = torch.rand(1, 3, 32, 32)
+    with torch.no_grad():
+        default_out = default_wrapper(x)
+        custom_out = custom_wrapper(x)
+
+    # Different normalization should produce different outputs
+    assert not torch.allclose(default_out, custom_out, atol=1e-3)
