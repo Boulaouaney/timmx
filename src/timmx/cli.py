@@ -4,6 +4,7 @@ import functools
 import logging
 import os
 import warnings
+from pathlib import Path
 
 import typer
 
@@ -118,6 +119,71 @@ def doctor() -> None:
             "[dim]Tip: pip install 'timmx\\[all]' installs all"
             " non-platform-specific backends.[/dim]"
         )
+
+
+def _format_param_count(n: int) -> str:
+    """Format a parameter count like '11.69M (11,689,512)'."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.2f}M ({n:,})"
+    if n >= 1_000:
+        return f"{n / 1_000:.2f}K ({n:,})"
+    return f"{n:,}"
+
+
+@app.command()
+def info(
+    model_name: str = typer.Argument(help="timm model name, e.g. resnet18"),
+    pretrained: bool = typer.Option(False, "--pretrained", help="Load timm pretrained weights."),
+    checkpoint: Path | None = typer.Option(None, help="Path to a fine-tuned checkpoint."),
+    num_classes: int | None = typer.Option(
+        None, help="Override the model classifier output classes."
+    ),
+    in_chans: int | None = typer.Option(None, help="Override model input channels."),
+) -> None:
+    """Show model metadata without exporting."""
+    from rich.table import Table
+
+    from timmx.export.common import create_timm_model, resolve_input_size
+
+    try:
+        model = create_timm_model(
+            model_name,
+            pretrained=pretrained,
+            checkpoint=checkpoint,
+            num_classes=num_classes,
+            in_chans=in_chans,
+        )
+    except TimmxError as exc:
+        console.print(f"[bold red]error:[/bold red] {exc}", highlight=False)
+        raise typer.Exit(code=2) from exc
+
+    input_size = resolve_input_size(model, None)
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    # Determine weights status
+    if checkpoint is not None:
+        weights_info = f"checkpoint ({Path(checkpoint).name})"
+    elif pretrained:
+        weights_info = "pretrained"
+    else:
+        weights_info = "none (random init)"
+
+    table = Table(show_header=False, show_edge=False, pad_edge=False)
+    table.add_column(style="bold")
+    table.add_column()
+
+    table.add_row("Model", model_name)
+    table.add_row("Architecture", model.__class__.__name__)
+    table.add_row("Parameters", _format_param_count(total_params))
+    if trainable_params != total_params:
+        table.add_row("Trainable", _format_param_count(trainable_params))
+    table.add_row("Input size", f"{input_size[0]} x {input_size[1]} x {input_size[2]}")
+    table.add_row("Classes", str(model.num_classes))
+    table.add_row("Feature dim", str(model.num_features))
+    table.add_row("Weights", weights_info)
+
+    console.print(table)
 
 
 def main() -> None:
