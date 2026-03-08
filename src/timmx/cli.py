@@ -194,5 +194,22 @@ def info(
     console.print(table)
 
 
+@app.command(name="list")
+def list_models(
+    query: str = typer.Argument("", help="Filter pattern (substring or glob)."),
+    pretrained_only: bool = typer.Option(
+        False, "--pretrained-only", help="Only show models with pretrained weights."
+    ),
+) -> None:
+    """List available timm models."""
+    import timm
+
+    pattern = query if ("*" in query or "?" in query) else f"*{query}*"
+    models = timm.list_models(pattern, pretrained=pretrained_only)
+    for name in models:
+        console.print(name, highlight=False)
+    console.print(f"\nFound {len(models)} models")
+
+
 def main() -> None:
     app()

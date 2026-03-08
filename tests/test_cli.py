@@ -38,6 +38,12 @@ def test_root_help_mentions_doctor() -> None:
     assert "doctor" in _plain(result.output)
 
 
+def test_root_help_mentions_list() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "list" in _plain(result.output)
+
+
 def test_export_help_lists_backends() -> None:
     result = runner.invoke(app, ["export", "--help"])
     assert result.exit_code == 0
