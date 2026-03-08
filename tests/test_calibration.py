@@ -169,6 +169,43 @@ def test_calibration_samples_rejects_invalid_values(bad_value: int) -> None:
         )
 
 
+def test_image_dir_calibration_custom_mean_std(
+    tmp_path: Path, resnet18_model: torch.nn.Module
+) -> None:
+    """Custom mean/std override timm config for calibration images."""
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    for i in range(4):
+        img = Image.new("RGB", (64, 64), color=(i * 30, i * 20, i * 10))
+        img.save(img_dir / f"img_{i:02d}.jpg")
+
+    custom_mean = (0.5, 0.5, 0.5)
+    custom_std = (0.5, 0.5, 0.5)
+
+    batches_custom = resolve_calibration_batches(
+        calibration_data=img_dir,
+        calibration_steps=None,
+        batch_size=2,
+        input_size=(3, 224, 224),
+        device=torch.device("cpu"),
+        model=resnet18_model,
+        mean=custom_mean,
+        std=custom_std,
+    )
+
+    batches_default = resolve_calibration_batches(
+        calibration_data=img_dir,
+        calibration_steps=None,
+        batch_size=2,
+        input_size=(3, 224, 224),
+        device=torch.device("cpu"),
+        model=resnet18_model,
+    )
+
+    # Custom normalization should produce different values than default
+    assert not torch.allclose(batches_custom[0], batches_default[0], atol=1e-3)
+
+
 def test_nonexistent_path_raises() -> None:
     with pytest.raises(ConfigurationError, match="does not exist"):
         resolve_calibration_batches(

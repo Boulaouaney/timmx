@@ -17,10 +17,12 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -129,6 +131,8 @@ class ExecuTorchBackend(ExportBackend):
                     "Disable with --no-per-channel for per-tensor."
                 ),
             ] = True,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             if compute_precision is not None and delegate != ExecuTorchDelegate.coreml:
                 raise ConfigurationError(
@@ -184,6 +188,8 @@ class ExecuTorchBackend(ExportBackend):
                     dynamic_batch=dynamic_batch,
                     delegate=delegate,
                     partitioner=partitioner,
+                    mean=mean,
+                    std=std,
                 )
             else:
                 et_program = _export_standard(
@@ -252,6 +258,8 @@ def _export_quantized(
     dynamic_batch: bool,
     delegate: ExecuTorchDelegate,
     partitioner: list[object],
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
 ) -> object:
     from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
     from torchao.quantization.pt2e import quantize_pt2e
@@ -265,6 +273,8 @@ def _export_quantized(
         model=model,
         calibration_samples=calibration_samples,
         random_calibration=random_calibration,
+        mean=mean,
+        std=std,
     )
 
     quantizer = _build_quantizer(delegate=delegate, per_channel=per_channel)

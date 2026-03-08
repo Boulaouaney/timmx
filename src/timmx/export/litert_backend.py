@@ -17,10 +17,12 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -108,6 +110,8 @@ class LiteRTBackend(ExportBackend):
             verify: Annotated[
                 bool, typer.Option(help="Load and allocate the exported TFLite model.")
             ] = True,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             int8_modes = {LiteRTMode.dynamic_int8, LiteRTMode.int8}
 
@@ -162,6 +166,8 @@ class LiteRTBackend(ExportBackend):
                     model=prep.model,
                     calibration_samples=calibration_samples,
                     random_calibration=random_calibration,
+                    mean=mean,
+                    std=std,
                 )
                 example_input = calibration_batches[0]
                 convert_module, quant_config = _prepare_pt2e_quantized_module(

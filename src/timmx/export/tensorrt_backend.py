@@ -18,10 +18,12 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -145,6 +147,8 @@ class TensorRTBackend(ExportBackend):
             verbose: Annotated[
                 bool, typer.Option(help="Enable verbose TensorRT builder logging.")
             ] = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             if device != Device.cuda:
                 raise ConfigurationError("TensorRT export requires --device cuda.")
@@ -262,6 +266,8 @@ class TensorRTBackend(ExportBackend):
                         model=prep.model,
                         calibration_samples=calibration_samples,
                         random_calibration=random_calibration,
+                        mean=mean,
+                        std=std,
                     )
                     config.int8_calibrator = calibrator
 
@@ -339,6 +345,8 @@ def _create_calibrator(
     model: torch.nn.Module,
     calibration_samples: int | None,
     random_calibration: bool,
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
 ) -> object:
     batches = resolve_calibration_batches(
         calibration_data=calibration_data,
@@ -349,6 +357,8 @@ def _create_calibrator(
         model=model,
         calibration_samples=calibration_samples,
         random_calibration=random_calibration,
+        mean=mean,
+        std=std,
     )
     cache_path = calibration_cache or Path("tensorrt_calibration.cache")
     calibrator_cls = _make_calibrator_class(trt)
