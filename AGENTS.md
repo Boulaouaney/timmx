@@ -40,7 +40,7 @@ Current built-in backends:
 - Backend implementations: `src/timmx/export/<format>_backend.py`
 - Shared model helpers: `src/timmx/export/common.py`
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
-- CLI entrypoint: `src/timmx/cli.py` (includes `doctor` diagnostic command)
+- CLI entrypoint: `src/timmx/cli.py` (includes `info` model inspection and `doctor` diagnostic commands)
 - Tests: `tests/`
 
 ## Backend Design Contract
