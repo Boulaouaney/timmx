@@ -64,6 +64,26 @@ uv run timmx doctor
 uv run timmx --help
 ```
 
+## Model Info
+
+Inspect a model's metadata (parameter count, input size, number of classes, etc.) without exporting:
+
+```bash
+uv run timmx info resnet18 --pretrained
+```
+
+This displays architecture details, parameter counts, default input size, and whether weights are loaded.
+
+## Listing Models
+
+Browse and search available timm models:
+
+```bash
+uv run timmx list resnet                        # search by substring
+uv run timmx list "resnet*"                     # search by glob pattern
+uv run timmx list --pretrained-only resnet      # only models with pretrained weights
+```
+
 ## Usage Examples
 
 ### ONNX
@@ -414,7 +434,7 @@ uv run timmx export torchscript resnet18 \
 
 ## Diagnostics
 
-Run `timmx doctor` to check your installation and see which backends are available:
+Run `timmx info <model>` to inspect any model's metadata, or `timmx doctor` to check your installation and see which backends are available:
 
 ```bash
 timmx doctor

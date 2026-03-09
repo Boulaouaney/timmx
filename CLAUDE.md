@@ -39,7 +39,7 @@ The codebase uses a **registry-based plugin architecture**:
 - `src/timmx/export/registry.py` — `BackendRegistry` dict + `create_builtin_registry()` factory that registers all built-in backends
 - `src/timmx/export/types.py` — shared `Device` enum used by all backends
 - `src/timmx/console.py` — shared `rich.console.Console` instance used for all terminal output
-- `src/timmx/cli.py` — Typer-based dispatcher; dynamically registers backend commands on an `export` sub-app; catches `TimmxError` and exits with code 2; also provides the `doctor` diagnostic command
+- `src/timmx/cli.py` — Typer-based dispatcher; dynamically registers backend commands on an `export` sub-app; catches `TimmxError` and exits with code 2; also provides the `info` and `doctor` top-level commands and the `list` command for searching available timm models
 - `src/timmx/export/common.py` — shared helpers: `create_timm_model()`, `resolve_input_size()`, `validate_common_args()`, `PrePostWrapper` (preprocessing/postprocessing `nn.Module` wrapper), `wrap_with_preprocessing()`
 - `src/timmx/export/calibration.py` — calibration data loading/slicing for quantized exports; supports image directories (with timm transforms), torch-saved tensors, and random noise (opt-in via `--random-calibration`)
 - `src/timmx/errors.py` — `TimmxError` → `ConfigurationError` / `ExportError`
