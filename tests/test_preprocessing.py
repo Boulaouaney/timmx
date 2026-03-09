@@ -132,3 +132,19 @@ def test_prepostwrapper_custom_mean_std_output() -> None:
 
     # Different normalization should produce different outputs
     assert not torch.allclose(default_out, custom_out, atol=1e-3)
+
+
+def test_wrap_with_preprocessing_zero_mean_std() -> None:
+    """Zero-valued mean/std should be used, not fall back to timm defaults."""
+    model = _make_simple_model()
+    zero_mean = (0.0, 0.0, 0.0)
+    zero_std = (1.0, 1.0, 1.0)
+    wrapped = wrap_with_preprocessing(model, mean=zero_mean, std=zero_std)
+    assert isinstance(wrapped, PrePostWrapper)
+
+    mean_buf = wrapped.mean.squeeze().tolist()
+    std_buf = wrapped.std.squeeze().tolist()
+    for a, b in zip(mean_buf, zero_mean):
+        assert abs(a - b) < 1e-6, f"Zero mean not preserved: got {a}, expected {b}"
+    for a, b in zip(std_buf, zero_std):
+        assert abs(a - b) < 1e-6, f"Std not preserved: got {a}, expected {b}"

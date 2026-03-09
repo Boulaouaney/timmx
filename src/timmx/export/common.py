@@ -179,8 +179,8 @@ def wrap_with_preprocessing(
     Uses timm's data config by default; pass *mean*/*std* to override.
     """
     config = resolve_data_config(model=model)
-    effective_mean = mean or config.get("mean", (0.485, 0.456, 0.406))
-    effective_std = std or config.get("std", (0.229, 0.224, 0.225))
+    effective_mean = mean if mean is not None else config.get("mean", (0.485, 0.456, 0.406))
+    effective_std = std if std is not None else config.get("std", (0.229, 0.224, 0.225))
     return PrePostWrapper(model, mean=effective_mean, std=effective_std, softmax=softmax)
 
 
