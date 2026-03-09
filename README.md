@@ -74,6 +74,16 @@ uv run timmx info resnet18 --pretrained
 
 This displays architecture details, parameter counts, default input size, and whether weights are loaded.
 
+## Listing Models
+
+Browse and search available timm models:
+
+```bash
+uv run timmx list resnet                        # search by substring
+uv run timmx list "resnet*"                     # search by glob pattern
+uv run timmx list --pretrained-only resnet      # only models with pretrained weights
+```
+
 ## Usage Examples
 
 ### ONNX
