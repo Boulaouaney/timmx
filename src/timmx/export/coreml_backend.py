@@ -109,7 +109,7 @@ class CoreMLBackend(ExportBackend):
                 raise ConfigurationError(
                     "--compute-precision is only supported when --convert-to mlprogram."
                 )
-            if source == ExportSource.trace and dynamic_batch:
+            if dynamic_batch:
                 if batch_upper_bound < 1:
                     raise ConfigurationError("--batch-upper-bound must be >= 1.")
                 if batch_upper_bound < batch_size:
@@ -152,7 +152,7 @@ class CoreMLBackend(ExportBackend):
             if source == ExportSource.torch_export:
                 dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
                 if dynamic_batch:
-                    dynamic_shapes = ({0: torch.export.Dim("batch", max=batch_upper_bound)},)
+                    dynamic_shapes = ({0: torch.export.Dim("batch", min=1, max=batch_upper_bound)},)
 
                 try:
                     exported_program = torch.export.export(

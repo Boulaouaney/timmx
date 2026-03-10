@@ -110,7 +110,7 @@ def test_export_coreml_torch_export_source(tmp_path: Path) -> None:
 
 
 def test_torch_export_dynamic_batch(tmp_path: Path) -> None:
-    """torch-export source with dynamic batch produces a valid model."""
+    """torch-export dynamic batch preserves a runnable batch range starting at 1."""
     output_path = tmp_path / "resnet18_te_dynamic.mlpackage"
     kwargs = _build_kwargs(
         output_path,
@@ -124,6 +124,11 @@ def test_torch_export_dynamic_batch(tmp_path: Path) -> None:
     command(**kwargs)
 
     assert output_path.exists()
+    model = ct.models.MLModel(str(output_path), skip_model_load=True)
+    spec = model.get_spec()
+    batch_range = spec.description.input[0].type.multiArrayType.shapeRange.sizeRanges[0]
+    assert batch_range.lowerBound == 1
+    assert batch_range.upperBound == 8
 
 
 def test_torch_export_dynamic_batch_requires_batch_ge_2(tmp_path: Path) -> None:
@@ -139,6 +144,25 @@ def test_torch_export_dynamic_batch_requires_batch_ge_2(tmp_path: Path) -> None:
     backend = CoreMLBackend()
     command = backend.create_command()
     with pytest.raises(ConfigurationError):
+        command(**kwargs)
+
+
+def test_torch_export_dynamic_batch_rejects_upper_bound_below_batch_size(
+    tmp_path: Path,
+) -> None:
+    """torch-export dynamic batch rejects upper bounds below the sample batch size."""
+    output_path = tmp_path / "resnet18_te_invalid_upper.mlpackage"
+    kwargs = _build_kwargs(
+        output_path,
+        source="torch-export",
+        dynamic_batch=True,
+        batch_size=2,
+        batch_upper_bound=1,
+    )
+
+    backend = CoreMLBackend()
+    command = backend.create_command()
+    with pytest.raises(ConfigurationError, match="--batch-upper-bound must be >= --batch-size."):
         command(**kwargs)
 
 
