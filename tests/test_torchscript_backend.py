@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import pytest
 import torch
 
+from timmx.export.common import create_timm_model, wrap_with_preprocessing
 from timmx.export.torchscript_backend import TorchScriptBackend
 
 
@@ -60,3 +62,45 @@ def test_export_torchscript_verify_runs_forward_pass(tmp_path: Path) -> None:
     loaded = torch.jit.load(str(output_path))
     out = loaded(torch.randn(1, 3, 32, 32))
     assert out.shape == (1, 1000)
+
+
+@pytest.mark.parametrize("method", ["trace", "script"])
+def test_export_torchscript_wrapper_round_trips_outputs_and_config(
+    tmp_path: Path, method: str
+) -> None:
+    seed = 789
+    mean = (0.5, 0.25, 0.75)
+    std = (0.125, 0.5, 0.25)
+    x = torch.rand(1, 3, 32, 32)
+
+    torch.manual_seed(seed)
+    reference_model = create_timm_model(
+        "resnet18",
+        pretrained=False,
+        checkpoint=None,
+        num_classes=None,
+        in_chans=None,
+    ).eval()
+    wrapped = wrap_with_preprocessing(reference_model, softmax=True, mean=mean, std=std).eval()
+
+    output_path = tmp_path / f"resnet18_{method}_wrapped.pt"
+    kwargs = _build_kwargs(
+        output_path,
+        method=method,
+        softmax=True,
+        mean=mean,
+        std=std,
+    )
+
+    torch.manual_seed(seed)
+    TorchScriptBackend().create_command()(**kwargs)
+
+    loaded = torch.jit.load(str(output_path))
+    out = loaded(x)
+    expected = wrapped(x)
+
+    assert loaded.training is False
+    assert torch.allclose(out, expected, atol=1e-5, rtol=1e-5)
+    assert torch.allclose(out.sum(dim=-1), torch.ones(1), atol=1e-5)
+    assert torch.allclose(loaded.mean.detach().flatten(), torch.tensor(mean), atol=1e-6)
+    assert torch.allclose(loaded.std.detach().flatten(), torch.tensor(std), atol=1e-6)

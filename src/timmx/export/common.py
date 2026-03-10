@@ -159,6 +159,7 @@ class PrePostWrapper(torch.nn.Module):
         self.register_buffer("mean", torch.tensor(mean).reshape(1, -1, 1, 1))
         self.register_buffer("std", torch.tensor(std).reshape(1, -1, 1, 1))
         self.softmax = softmax
+        self.train(model.training)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = (x - self.mean) / self.std

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pytest
 import timm
 import torch
 from timm.data import resolve_data_config
 
-from timmx.export.common import PrePostWrapper, wrap_with_preprocessing
+from timmx.errors import ConfigurationError
+from timmx.export.common import PrePostWrapper, prepare_export, wrap_with_preprocessing
 
 
 def _make_simple_model() -> torch.nn.Module:
@@ -148,3 +150,52 @@ def test_wrap_with_preprocessing_zero_mean_std() -> None:
         assert abs(a - b) < 1e-6, f"Zero mean not preserved: got {a}, expected {b}"
     for a, b in zip(std_buf, zero_std):
         assert abs(a - b) < 1e-6, f"Std not preserved: got {a}, expected {b}"
+
+
+def test_wrap_with_preprocessing_preserves_wrapped_model_mode() -> None:
+    train_model = _make_simple_model()
+    train_model.train()
+    wrapped_train = wrap_with_preprocessing(train_model)
+    assert wrapped_train.training is True
+    assert wrapped_train.model.training is True
+
+    eval_model = _make_simple_model()
+    eval_model.eval()
+    wrapped_eval = wrap_with_preprocessing(eval_model)
+    assert wrapped_eval.training is False
+    assert wrapped_eval.model.training is False
+
+
+def test_prepare_export_wrapped_model_stays_in_eval_mode(tmp_path) -> None:
+    prep = prepare_export(
+        model_name="resnet18",
+        output=tmp_path / "out.pt",
+        checkpoint=None,
+        pretrained=False,
+        num_classes=None,
+        in_chans=None,
+        batch_size=1,
+        input_size=(3, 32, 32),
+        device="cpu",
+        normalize=True,
+    )
+
+    assert prep.model.training is False
+    assert prep.model.model.training is False
+
+
+def test_prepare_export_rejects_mean_std_without_wrapper_flags(tmp_path) -> None:
+    with pytest.raises(ConfigurationError, match="--mean/--std require --normalize or --softmax"):
+        prepare_export(
+            model_name="resnet18",
+            output=tmp_path / "out.pt",
+            checkpoint=None,
+            pretrained=False,
+            num_classes=None,
+            in_chans=None,
+            batch_size=1,
+            input_size=(3, 32, 32),
+            device="cpu",
+            mean=(0.5, 0.5, 0.5),
+            std=(0.5, 0.5, 0.5),
+        )
