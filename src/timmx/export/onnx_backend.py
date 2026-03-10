@@ -14,10 +14,14 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -66,6 +70,10 @@ class OnnxBackend(ExportBackend):
             slim: Annotated[
                 bool, typer.Option(help="Optimize the exported model with onnxslim.")
             ] = True,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             if opset < 7:
                 raise ConfigurationError("--opset must be >= 7.")
@@ -80,6 +88,10 @@ class OnnxBackend(ExportBackend):
                 batch_size=batch_size,
                 input_size=input_size,
                 device=device,
+                normalize=normalize,
+                softmax=softmax,
+                mean=mean,
+                std=std,
             )
 
             export_kwargs: dict[str, object] = {

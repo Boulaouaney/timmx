@@ -38,7 +38,7 @@ Current built-in backends:
 - Export backend interface: `src/timmx/export/base.py` (`ExportBackend` ABC, `DependencyStatus`)
 - Backend registry: `src/timmx/export/registry.py`
 - Backend implementations: `src/timmx/export/<format>_backend.py`
-- Shared model helpers: `src/timmx/export/common.py`
+- Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping, `wrap_with_preprocessing()` helper, and `MeanOpt`/`StdOpt`/`NormalizeOpt`/`SoftmaxOpt` Typer type aliases)
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `info` model inspection, `list` model search, and `doctor` diagnostic commands)
 - Tests: `tests/`
@@ -59,6 +59,8 @@ Every backend must:
 The CLI must remain format-agnostic and dispatch through the registry.
 
 Runtime nuance:
+- `--in-chans` currently supports only `1` or `3`. For 1-channel models, shared
+  normalization/calibration helpers average RGB mean/std values down to a single grayscale value.
 - For `onnx`, `--slim` (default `True`) runs onnxslim after export for graph optimization (constant
   folding, dead-code elimination, operator fusion); disable with `--no-slim`.
 - For `coreml`, `--source` selects model capture: `trace` (default, `torch.jit.trace`) or
@@ -74,6 +76,8 @@ Runtime nuance:
   image directory (timm transforms applied automatically, `--calibration-samples` limits count,
   default 128) or a torch-saved tensor `(N, C, H, W)`. Int8 requires `--calibration-data` or
   the explicit `--random-calibration` escape hatch (random noise, not recommended for production).
+  `--mean`/`--std` override the timm data config for calibration image normalization (useful for
+  fine-tuned models trained with custom normalization).
 - For `ncnn`, `--output` is a directory (not a file); pnnx intermediate files (`model.pt`, `model.pnnx.*`,
   `model_pnnx.py`) and `__pycache__` are removed automatically after export. `--fp16` defaults to `True`.
   Requires `pip install 'timmx[ncnn]'` (installs `pnnx` only; the `ncnn` Python package is not needed
@@ -91,6 +95,14 @@ Runtime nuance:
 - For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
+- For `onnx`, `torchscript`, `coreml`, `torch-export`, `ncnn`, `executorch`, `litert`, and
+  `tensorrt`, `--normalize` wraps the model with timm's mean/std normalization (via
+  `PrePostWrapper` in `common.py`), so exported models accept unnormalized `[0, 1]` float input.
+  `--softmax` adds a softmax output layer independently; combine it with `--normalize` when you want
+  both embedded preprocessing and probability outputs, or use it alone if your runtime already feeds
+  normalized tensors. `--mean`/`--std` override embedded normalization and therefore require
+  `--normalize`; for `litert`, `tensorrt`, and `executorch` int8 calibration, they also override
+  calibration image preprocessing.
 
 ## Adding a New Export Backend
 

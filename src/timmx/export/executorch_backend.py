@@ -17,10 +17,14 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -129,6 +133,10 @@ class ExecuTorchBackend(ExportBackend):
                     "Disable with --no-per-channel for per-tensor."
                 ),
             ] = True,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             if compute_precision is not None and delegate != ExecuTorchDelegate.coreml:
                 raise ConfigurationError(
@@ -148,6 +156,11 @@ class ExecuTorchBackend(ExportBackend):
                 raise ConfigurationError(
                     "--dynamic-batch requires --batch-size >= 2 for stable symbolic shape capture."
                 )
+            if (mean is not None or std is not None) and not normalize:
+                if mode != ExecuTorchMode.int8:
+                    raise ConfigurationError(
+                        "--mean/--std require --normalize unless used for --mode int8 calibration."
+                    )
 
             _import_executorch()
 
@@ -161,6 +174,10 @@ class ExecuTorchBackend(ExportBackend):
                 batch_size=batch_size,
                 input_size=input_size,
                 device=device,
+                normalize=normalize,
+                softmax=softmax,
+                mean=mean if normalize else None,
+                std=std if normalize else None,
             )
 
             partitioner = _build_partitioner(
@@ -184,6 +201,9 @@ class ExecuTorchBackend(ExportBackend):
                     dynamic_batch=dynamic_batch,
                     delegate=delegate,
                     partitioner=partitioner,
+                    mean=mean,
+                    std=std,
+                    normalize_calibration_images=not normalize,
                 )
             else:
                 et_program = _export_standard(
@@ -252,6 +272,9 @@ def _export_quantized(
     dynamic_batch: bool,
     delegate: ExecuTorchDelegate,
     partitioner: list[object],
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
+    normalize_calibration_images: bool = True,
 ) -> object:
     from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
     from torchao.quantization.pt2e import quantize_pt2e
@@ -265,6 +288,9 @@ def _export_quantized(
         model=model,
         calibration_samples=calibration_samples,
         random_calibration=random_calibration,
+        mean=mean,
+        std=std,
+        normalize_images=normalize_calibration_images,
     )
 
     quantizer = _build_quantizer(delegate=delegate, per_channel=per_channel)

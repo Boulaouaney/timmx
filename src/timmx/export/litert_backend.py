@@ -17,10 +17,14 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -108,12 +112,21 @@ class LiteRTBackend(ExportBackend):
             verify: Annotated[
                 bool, typer.Option(help="Load and allocate the exported TFLite model.")
             ] = True,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             int8_modes = {LiteRTMode.dynamic_int8, LiteRTMode.int8}
 
             if mode in int8_modes and device != Device.cpu:
                 raise ConfigurationError(
                     "LiteRT int8 modes currently require --device cpu for PT2E quantization."
+                )
+            if mode not in int8_modes and (mean is not None or std is not None) and not normalize:
+                raise ConfigurationError(
+                    "--mean/--std require --normalize unless used for --mode dynamic-int8 "
+                    "or --mode int8 calibration."
                 )
             if mode not in int8_modes and (
                 calibration_data is not None
@@ -139,6 +152,10 @@ class LiteRTBackend(ExportBackend):
                 batch_size=batch_size,
                 input_size=input_size,
                 device=device,
+                normalize=normalize,
+                softmax=softmax,
+                mean=mean if normalize else None,
+                std=std if normalize else None,
             )
 
             convert_module: torch.nn.Module = prep.model
@@ -162,6 +179,9 @@ class LiteRTBackend(ExportBackend):
                     model=prep.model,
                     calibration_samples=calibration_samples,
                     random_calibration=random_calibration,
+                    mean=mean,
+                    std=std,
+                    normalize_images=not normalize,
                 )
                 example_input = calibration_batches[0]
                 convert_module, quant_config = _prepare_pt2e_quantized_module(

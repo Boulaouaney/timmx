@@ -67,6 +67,10 @@ def test_export_executorch_help_shows_options() -> None:
     assert "--dynamic-batch" in _plain(result.output)
     assert "--calibration-d" in _plain(result.output)
     assert "--per-channel" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
+    assert "--mean" in _plain(result.output)
+    assert "--std" in _plain(result.output)
 
 
 def test_export_onnx_help_shows_options() -> None:
@@ -89,6 +93,10 @@ def test_export_coreml_help_shows_options() -> None:
     assert "--half" in _plain(result.output)
     assert "--int8" in _plain(result.output)
     assert "--int4" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
+    assert "--mean" in _plain(result.output)
+    assert "--std" in _plain(result.output)
 
 
 def test_export_litert_help_shows_options() -> None:
@@ -98,6 +106,10 @@ def test_export_litert_help_shows_options() -> None:
     assert "--mode" in _plain(result.output)
     assert "calibration-da" in _plain(result.output)
     assert "--nhwc-input" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
+    assert "--mean" in _plain(result.output)
+    assert "--std" in _plain(result.output)
 
 
 def test_export_tensorrt_help_shows_options() -> None:
@@ -109,6 +121,10 @@ def test_export_tensorrt_help_shows_options() -> None:
     assert "--dynamic-batch" in _plain(result.output)
     assert "calibration-da" in _plain(result.output)
     assert "--keep-onnx" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
+    assert "--mean" in _plain(result.output)
+    assert "--std" in _plain(result.output)
 
 
 def test_export_torch_export_help_shows_options() -> None:
@@ -117,6 +133,10 @@ def test_export_torch_export_help_shows_options() -> None:
     assert "--output" in _plain(result.output)
     assert "--dynamic-batch" in _plain(result.output)
     assert "--strict" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
+    assert "--mean" in _plain(result.output)
+    assert "--std" in _plain(result.output)
 
 
 def test_export_torchscript_help_shows_options() -> None:
@@ -133,3 +153,7 @@ def test_export_ncnn_help_shows_options() -> None:
     assert "--output" in _plain(result.output)
     assert "--fp16" in _plain(result.output)
     assert "--device" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
+    assert "--mean" in _plain(result.output)
+    assert "--std" in _plain(result.output)

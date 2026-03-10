@@ -19,6 +19,10 @@ def _build_kwargs(
     half: bool = False,
     int8: bool = False,
     int4: bool = False,
+    normalize: bool = False,
+    softmax: bool = False,
+    mean: tuple[float, float, float] | None = None,
+    std: tuple[float, float, float] | None = None,
     verify: bool = True,
     source: str = "trace",
 ) -> dict:
@@ -40,8 +44,29 @@ def _build_kwargs(
         "half": half,
         "int8": int8,
         "int4": int4,
+        "normalize": normalize,
+        "softmax": softmax,
+        "mean": mean,
+        "std": std,
         "verify": verify,
     }
+
+
+def _get_mlprogram_operations(output_path: Path) -> list:
+    model = ct.models.MLModel(str(output_path), skip_model_load=True)
+    spec = model.get_spec()
+    return spec.mlProgram.functions["main"].block_specializations["CoreML5"].operations
+
+
+def _has_const_float_values(operations: list, expected: tuple[float, ...] | list[float]) -> bool:
+    expected_values = list(expected)
+    for op in operations:
+        if op.type != "const":
+            continue
+        values = list(op.attributes["val"].immediateValue.tensor.floats.values)
+        if values == expected_values:
+            return True
+    return False
 
 
 def test_export_coreml_mlprogram_and_verify(tmp_path: Path) -> None:
@@ -55,6 +80,31 @@ def test_export_coreml_mlprogram_and_verify(tmp_path: Path) -> None:
     assert output_path.exists()
     loaded_model = ct.models.MLModel(str(output_path), skip_model_load=True)
     assert type(loaded_model).__name__ == "MLModel"
+
+
+def test_export_coreml_trace_wraps_preprocessing_and_softmax(tmp_path: Path) -> None:
+    output_path = tmp_path / "resnet18_wrapped.mlpackage"
+    mean = (0.5, 0.25, 0.75)
+    std = (0.125, 0.5, 0.25)
+    kwargs = _build_kwargs(
+        output_path,
+        compute_precision="float32",
+        normalize=True,
+        softmax=True,
+        mean=mean,
+        std=std,
+        verify=False,
+    )
+
+    CoreMLBackend().create_command()(**kwargs)
+
+    operations = _get_mlprogram_operations(output_path)
+    op_types = [op.type for op in operations]
+    assert "sub" in op_types
+    assert "mul" in op_types
+    assert "softmax" in op_types
+    assert _has_const_float_values(operations, mean)
+    assert _has_const_float_values(operations, [8.0, 2.0, 4.0])
 
 
 def test_dynamic_batch_sets_shape_range(tmp_path: Path) -> None:
@@ -109,8 +159,36 @@ def test_export_coreml_torch_export_source(tmp_path: Path) -> None:
     assert type(loaded_model).__name__ == "MLModel"
 
 
+def test_export_coreml_torch_export_source_wraps_preprocessing_and_softmax(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "resnet18_te_wrapped.mlpackage"
+    mean = (0.5, 0.25, 0.75)
+    std = (0.125, 0.5, 0.25)
+    kwargs = _build_kwargs(
+        output_path,
+        source="torch-export",
+        compute_precision="float32",
+        normalize=True,
+        softmax=True,
+        mean=mean,
+        std=std,
+        verify=False,
+    )
+
+    CoreMLBackend().create_command()(**kwargs)
+
+    operations = _get_mlprogram_operations(output_path)
+    op_types = [op.type for op in operations]
+    assert "sub" in op_types
+    assert "mul" in op_types
+    assert "softmax" in op_types
+    assert _has_const_float_values(operations, mean)
+    assert _has_const_float_values(operations, [8.0, 2.0, 4.0])
+
+
 def test_torch_export_dynamic_batch(tmp_path: Path) -> None:
-    """torch-export source with dynamic batch produces a valid model."""
+    """torch-export dynamic batch preserves a runnable batch range starting at 1."""
     output_path = tmp_path / "resnet18_te_dynamic.mlpackage"
     kwargs = _build_kwargs(
         output_path,
@@ -124,6 +202,11 @@ def test_torch_export_dynamic_batch(tmp_path: Path) -> None:
     command(**kwargs)
 
     assert output_path.exists()
+    model = ct.models.MLModel(str(output_path), skip_model_load=True)
+    spec = model.get_spec()
+    batch_range = spec.description.input[0].type.multiArrayType.shapeRange.sizeRanges[0]
+    assert batch_range.lowerBound == 1
+    assert batch_range.upperBound == 8
 
 
 def test_torch_export_dynamic_batch_requires_batch_ge_2(tmp_path: Path) -> None:
@@ -139,6 +222,25 @@ def test_torch_export_dynamic_batch_requires_batch_ge_2(tmp_path: Path) -> None:
     backend = CoreMLBackend()
     command = backend.create_command()
     with pytest.raises(ConfigurationError):
+        command(**kwargs)
+
+
+def test_torch_export_dynamic_batch_rejects_upper_bound_below_batch_size(
+    tmp_path: Path,
+) -> None:
+    """torch-export dynamic batch rejects upper bounds below the sample batch size."""
+    output_path = tmp_path / "resnet18_te_invalid_upper.mlpackage"
+    kwargs = _build_kwargs(
+        output_path,
+        source="torch-export",
+        dynamic_batch=True,
+        batch_size=2,
+        batch_upper_bound=1,
+    )
+
+    backend = CoreMLBackend()
+    command = backend.create_command()
+    with pytest.raises(ConfigurationError, match="--batch-upper-bound must be >= --batch-size."):
         command(**kwargs)
 
 

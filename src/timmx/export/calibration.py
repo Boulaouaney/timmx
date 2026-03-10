@@ -7,6 +7,10 @@ import torch
 
 from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
+from timmx.export.common import (
+    resolve_normalization_stats_for_channels,
+    validate_supported_input_channels,
+)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif"}
 DEFAULT_CALIBRATION_SAMPLES = 128
@@ -22,7 +26,12 @@ def resolve_calibration_batches(
     model: torch.nn.Module | None = None,
     calibration_samples: int | None = None,
     random_calibration: bool = False,
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
+    normalize_images: bool = True,
 ) -> list[torch.Tensor]:
+    validate_supported_input_channels(input_size[0], source="calibration input")
+
     if calibration_steps is not None and calibration_steps < 1:
         raise ConfigurationError("--calibration-steps must be >= 1.")
 
@@ -59,6 +68,9 @@ def resolve_calibration_batches(
             model=model,
             input_size=input_size,
             max_samples=calibration_samples or DEFAULT_CALIBRATION_SAMPLES,
+            mean=mean,
+            std=std,
+            normalize_images=normalize_images,
         )
     elif resolved_path.is_file():
         data_tensor = _load_calibration_tensor(resolved_path)
@@ -137,6 +149,9 @@ def _load_calibration_images(
     model: torch.nn.Module,
     input_size: tuple[int, int, int],
     max_samples: int,
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
+    normalize_images: bool = True,
 ) -> torch.Tensor:
     from PIL import Image
     from timm.data import create_transform, resolve_data_config
@@ -149,13 +164,32 @@ def _load_calibration_images(
 
     data_config = resolve_data_config(model=model)
     data_config["input_size"] = input_size
+    if normalize_images:
+        data_config["mean"], data_config["std"] = resolve_normalization_stats_for_channels(
+            input_channels=input_size[0],
+            mean=mean,
+            std=std,
+            default_mean=data_config.get("mean"),
+            default_std=data_config.get("std"),
+        )
+    else:
+        # When the exported model already embeds normalization, calibration images should
+        # stay in the raw [0, 1] input space.
+        data_config["mean"], data_config["std"] = resolve_normalization_stats_for_channels(
+            input_channels=input_size[0],
+            mean=(0.0, 0.0, 0.0),
+            std=(1.0, 1.0, 1.0),
+            default_mean=(0.0, 0.0, 0.0),
+            default_std=(1.0, 1.0, 1.0),
+        )
     transform = create_transform(**data_config, is_training=False)
+    image_mode = "L" if input_size[0] == 1 else "RGB"
 
     tensors: list[torch.Tensor] = []
     skipped = 0
     for path in image_paths:
         try:
-            img = Image.open(path).convert("RGB")
+            img = Image.open(path).convert(image_mode)
             tensor = transform(img)
             tensors.append(tensor)
         except Exception as exc:

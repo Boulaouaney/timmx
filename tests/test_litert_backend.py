@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -5,6 +6,7 @@ import pytest
 import torch
 
 from timmx.errors import ConfigurationError
+from timmx.export.common import wrap_with_preprocessing
 from timmx.export.litert_backend import LiteRTBackend
 
 pytest.importorskip("ai_edge_litert")
@@ -20,9 +22,26 @@ class _ConvModel(torch.nn.Module):
         return self.conv(x)
 
 
+class _ClassifierModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.features = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 8, kernel_size=3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.AdaptiveAvgPool2d((1, 1)),
+        )
+        self.classifier = torch.nn.Linear(8, 4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        return self.classifier(x)
+
+
 def _build_kwargs(
     output_path: Path,
     *,
+    batch_size: int = 2,
     mode: str = "fp32",
     nhwc_input: bool = False,
     calibration_data: Path | None = None,
@@ -30,6 +49,10 @@ def _build_kwargs(
     calibration_samples: int | None = None,
     random_calibration: bool = False,
     verify: bool = True,
+    normalize: bool = False,
+    softmax: bool = False,
+    mean: tuple[float, float, float] | None = None,
+    std: tuple[float, float, float] | None = None,
 ) -> dict:
     return {
         "model_name": "dummy",
@@ -38,7 +61,7 @@ def _build_kwargs(
         "pretrained": False,
         "num_classes": None,
         "in_chans": None,
-        "batch_size": 2,
+        "batch_size": batch_size,
         "input_size": (3, 16, 16),
         "device": "cpu",
         "mode": mode,
@@ -48,6 +71,10 @@ def _build_kwargs(
         "random_calibration": random_calibration,
         "nhwc_input": nhwc_input,
         "verify": verify,
+        "normalize": normalize,
+        "softmax": softmax,
+        "mean": mean,
+        "std": std,
     }
 
 
@@ -127,6 +154,215 @@ def test_export_litert_rejects_calibration_args_for_fp32(
     command = backend.create_command()
     with pytest.raises(ConfigurationError):
         command(**kwargs)
+
+
+def test_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: Path) -> None:
+    backend = LiteRTBackend()
+    command = backend.create_command()
+    with pytest.raises(
+        ConfigurationError,
+        match="--mean/--std require --normalize unless used for --mode dynamic-int8 or --mode int8 calibration",
+    ):
+        command(
+            **_build_kwargs(
+                tmp_path / "invalid_mean_std.tflite",
+                mode="fp32",
+                mean=(0.5, 0.25, 0.75),
+                std=(0.125, 0.5, 0.25),
+            )
+        )
+
+
+def test_allows_mean_std_for_int8_calibration_without_wrapper_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeEdgeModel:
+        def export(self, path: str) -> None:
+            Path(path).write_bytes(b"tfl3")
+
+    class _FakeLiteRTTorch:
+        @staticmethod
+        def convert(*_args, **_kwargs) -> _FakeEdgeModel:
+            return _FakeEdgeModel()
+
+    def fake_resolve_calibration_batches(**kwargs):
+        captured.update(kwargs)
+        return [torch.randn(2, 3, 16, 16)]
+
+    _patch_model_helpers(monkeypatch, _ConvModel().eval())
+    monkeypatch.setattr(
+        "timmx.export.litert_backend.resolve_calibration_batches",
+        fake_resolve_calibration_batches,
+    )
+    monkeypatch.setattr(
+        "timmx.export.litert_backend._prepare_pt2e_quantized_module",
+        lambda model, example_input, *, calibration_batches, is_dynamic: (model, object()),
+    )
+    monkeypatch.setattr(
+        "timmx.export.litert_backend._import_litert_torch",
+        lambda: _FakeLiteRTTorch(),
+    )
+
+    mean = (0.5, 0.25, 0.75)
+    std = (0.125, 0.5, 0.25)
+    output = tmp_path / "model_int8_mean_std.tflite"
+    LiteRTBackend().create_command()(
+        **_build_kwargs(
+            output,
+            mode="int8",
+            random_calibration=True,
+            verify=False,
+            mean=mean,
+            std=std,
+        )
+    )
+
+    assert output.exists()
+    assert captured["mean"] == mean
+    assert captured["std"] == std
+    assert captured["normalize_images"] is True
+
+
+def test_int8_wrapper_disables_image_normalization_for_calibration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeEdgeModel:
+        def export(self, path: str) -> None:
+            Path(path).write_bytes(b"tfl3")
+
+    class _FakeLiteRTTorch:
+        @staticmethod
+        def convert(*_args, **_kwargs) -> _FakeEdgeModel:
+            return _FakeEdgeModel()
+
+    def fake_resolve_calibration_batches(**kwargs):
+        captured.update(kwargs)
+        return [torch.randn(2, 3, 16, 16)]
+
+    _patch_model_helpers(monkeypatch, _ConvModel().eval())
+    monkeypatch.setattr(
+        "timmx.export.litert_backend.resolve_calibration_batches",
+        fake_resolve_calibration_batches,
+    )
+    monkeypatch.setattr(
+        "timmx.export.litert_backend._prepare_pt2e_quantized_module",
+        lambda model, example_input, *, calibration_batches, is_dynamic: (model, object()),
+    )
+    monkeypatch.setattr(
+        "timmx.export.litert_backend._import_litert_torch",
+        lambda: _FakeLiteRTTorch(),
+    )
+
+    output = tmp_path / "model_int8_wrapped.tflite"
+    LiteRTBackend().create_command()(
+        **_build_kwargs(
+            output,
+            mode="int8",
+            random_calibration=True,
+            verify=False,
+            normalize=True,
+            softmax=True,
+            mean=(0.5, 0.25, 0.75),
+            std=(0.125, 0.5, 0.25),
+        )
+    )
+
+    assert output.exists()
+    assert captured["normalize_images"] is False
+
+
+def test_int8_softmax_only_keeps_image_normalization_for_calibration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeEdgeModel:
+        def export(self, path: str) -> None:
+            Path(path).write_bytes(b"tfl3")
+
+    class _FakeLiteRTTorch:
+        @staticmethod
+        def convert(*_args, **_kwargs) -> _FakeEdgeModel:
+            return _FakeEdgeModel()
+
+    def fake_resolve_calibration_batches(**kwargs):
+        captured.update(kwargs)
+        return [torch.randn(2, 3, 16, 16)]
+
+    _patch_model_helpers(monkeypatch, _ConvModel().eval())
+    monkeypatch.setattr(
+        "timmx.export.litert_backend.resolve_calibration_batches",
+        fake_resolve_calibration_batches,
+    )
+    monkeypatch.setattr(
+        "timmx.export.litert_backend._prepare_pt2e_quantized_module",
+        lambda model, example_input, *, calibration_batches, is_dynamic: (model, object()),
+    )
+    monkeypatch.setattr(
+        "timmx.export.litert_backend._import_litert_torch",
+        lambda: _FakeLiteRTTorch(),
+    )
+
+    output = tmp_path / "model_int8_softmax_only.tflite"
+    LiteRTBackend().create_command()(
+        **_build_kwargs(
+            output,
+            mode="int8",
+            random_calibration=True,
+            verify=False,
+            softmax=True,
+        )
+    )
+
+    assert output.exists()
+    assert captured["normalize_images"] is True
+
+
+def test_export_litert_fp32_wraps_preprocessing_and_softmax(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "model_wrapped.tflite"
+    export_model = _ClassifierModel().eval()
+    reference_model = copy.deepcopy(export_model).eval()
+    _patch_model_helpers(monkeypatch, export_model)
+
+    mean = (0.5, 0.25, 0.75)
+    std = (0.125, 0.5, 0.25)
+    backend = LiteRTBackend()
+    command = backend.create_command()
+    command(
+        **_build_kwargs(
+            output_path,
+            mode="fp32",
+            batch_size=1,
+            normalize=True,
+            softmax=True,
+            mean=mean,
+            std=std,
+        )
+    )
+
+    interpreter = tfl_interpreter.Interpreter(model_path=str(output_path))
+    runner = interpreter.get_signature_runner("serving_default")
+    input_name = next(iter(runner.get_input_details()))
+    example_input = torch.rand(1, 3, 16, 16)
+    outputs = runner(**{input_name: example_input.numpy().astype(np.float32)})
+    actual = torch.from_numpy(next(iter(outputs.values())))
+    expected = wrap_with_preprocessing(
+        reference_model,
+        normalize=True,
+        softmax=True,
+        mean=mean,
+        std=std,
+    ).eval()(example_input)
+
+    assert output_path.exists()
+    assert torch.allclose(actual, expected, atol=5e-4, rtol=1e-4)
 
 
 def test_export_litert_int8_with_calibration_data_file(

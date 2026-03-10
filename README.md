@@ -102,6 +102,17 @@ uv run timmx export onnx resnet18 \
   --output ./artifacts/resnet18_finetuned.onnx
 ```
 
+Export with built-in normalization and softmax (the model will expect unnormalized `[0, 1]` float input and output probabilities):
+
+```bash
+uv run timmx export onnx resnet18 \
+  --pretrained \
+  --normalize --softmax \
+  --output ./artifacts/resnet18_with_preprocess.onnx
+```
+
+> `--normalize` embeds the timm model's mean/std normalization into the graph. `--softmax` adds a softmax layer on the output. Use both flags together if you want a self-contained export that accepts raw `[0, 1]` float input and outputs probabilities; use `--softmax` alone if your inputs are already normalized. `--mean` / `--std` override the embedded normalization and therefore require `--normalize`. `--in-chans` currently supports only `1` or `3`; for grayscale (`--in-chans 1`) exports, RGB mean/std values are averaged down to a single channel.
+
 Exported models are automatically optimized with [onnxslim](https://github.com/inisis/OnnxSlim) (constant folding, dead-code elimination, operator fusion). To skip optimization:
 
 ```bash
@@ -202,6 +213,19 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_int8.tflite
 ```
 
+For fine-tuned models with custom normalization, override calibration preprocessing with `--mean` / `--std`:
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_int8.tflite
+```
+
+For image-directory calibration, `--in-chans` currently supports only `1` or `3`; grayscale models
+average RGB mean/std values down to one channel automatically.
+
 A pre-saved torch tensor `(N, C, H, W)` is also accepted:
 
 ```bash
@@ -270,6 +294,17 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_int8.engine
 ```
 
+Override calibration normalization for fine-tuned models with `--mean` / `--std`:
+
+```bash
+uv run timmx export tensorrt resnet18 \
+  --pretrained \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_int8.engine
+```
+
 Dynamic batch size:
 
 ```bash
@@ -321,6 +356,17 @@ uv run timmx export executorch resnet18 \
   --output ./artifacts/resnet18_int8.pte
 ```
 
+Override calibration normalization for fine-tuned models with `--mean` / `--std`:
+
+```bash
+uv run timmx export executorch resnet18 \
+  --pretrained \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_int8.pte
+```
+
 INT8 quantized with CoreML:
 
 ```bash
@@ -360,6 +406,28 @@ uv run timmx export torchscript resnet18 \
   --pretrained \
   --output ./artifacts/resnet18.pt
 ```
+
+Export with built-in normalization (model accepts unnormalized `[0, 1]` float input):
+
+```bash
+uv run timmx export torchscript resnet18 \
+  --pretrained \
+  --normalize \
+  --output ./artifacts/resnet18_normalized.pt
+```
+
+For fine-tuned models with custom normalization, override with `--mean` / `--std`:
+
+```bash
+uv run timmx export torchscript resnet18 \
+  --pretrained \
+  --normalize \
+  --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
+  --output ./artifacts/resnet18_custom_norm.pt
+```
+
+Grayscale TorchScript export behaves the same as ONNX here: `--in-chans` is currently limited to
+`1` or `3`, and RGB mean/std values are averaged down to one channel for `--in-chans 1`.
 
 Use `torch.jit.script` instead of the default `trace`:
 

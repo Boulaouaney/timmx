@@ -14,6 +14,11 @@ def resnet18_model() -> torch.nn.Module:
     return timm.create_model("resnet18", pretrained=False).eval()
 
 
+@pytest.fixture()
+def resnet18_grayscale_model() -> torch.nn.Module:
+    return timm.create_model("resnet18", pretrained=False, exportable=True, in_chans=1).eval()
+
+
 def test_random_calibration_defaults_to_single_batch() -> None:
     batches = resolve_calibration_batches(
         calibration_data=None,
@@ -167,6 +172,89 @@ def test_calibration_samples_rejects_invalid_values(bad_value: int) -> None:
             device=torch.device("cpu"),
             calibration_samples=bad_value,
         )
+
+
+def test_image_dir_calibration_custom_mean_std(
+    tmp_path: Path, resnet18_model: torch.nn.Module
+) -> None:
+    """Custom mean/std override timm config for calibration images."""
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    for i in range(4):
+        img = Image.new("RGB", (64, 64), color=(i * 30, i * 20, i * 10))
+        img.save(img_dir / f"img_{i:02d}.jpg")
+
+    custom_mean = (0.5, 0.5, 0.5)
+    custom_std = (0.5, 0.5, 0.5)
+
+    batches_custom = resolve_calibration_batches(
+        calibration_data=img_dir,
+        calibration_steps=None,
+        batch_size=2,
+        input_size=(3, 224, 224),
+        device=torch.device("cpu"),
+        model=resnet18_model,
+        mean=custom_mean,
+        std=custom_std,
+    )
+
+    batches_default = resolve_calibration_batches(
+        calibration_data=img_dir,
+        calibration_steps=None,
+        batch_size=2,
+        input_size=(3, 224, 224),
+        device=torch.device("cpu"),
+        model=resnet18_model,
+    )
+
+    # Custom normalization should produce different values than default
+    assert not torch.allclose(batches_custom[0], batches_default[0], atol=1e-3)
+
+
+def test_image_dir_calibration_can_skip_normalization(
+    tmp_path: Path, resnet18_model: torch.nn.Module
+) -> None:
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    for index in range(2):
+        Image.new("RGB", (224, 224), color=(128, 64, 192)).save(img_dir / f"img_{index:02d}.png")
+
+    batches = resolve_calibration_batches(
+        calibration_data=img_dir,
+        calibration_steps=None,
+        batch_size=2,
+        input_size=(3, 224, 224),
+        device=torch.device("cpu"),
+        model=resnet18_model,
+        normalize_images=False,
+    )
+
+    channel_means = batches[0].mean(dim=(0, 2, 3))
+    expected = torch.tensor([128 / 255, 64 / 255, 192 / 255], dtype=torch.float32)
+    assert torch.allclose(channel_means, expected, atol=1e-3)
+
+
+def test_image_dir_calibration_grayscale_model(
+    tmp_path: Path, resnet18_grayscale_model: torch.nn.Module
+) -> None:
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    for i in range(4):
+        img = Image.new("RGB", (64, 64), color=(i * 40, i * 30, i * 20))
+        img.save(img_dir / f"img_{i:02d}.jpg")
+
+    batches = resolve_calibration_batches(
+        calibration_data=img_dir,
+        calibration_steps=None,
+        batch_size=2,
+        input_size=(1, 32, 32),
+        device=torch.device("cpu"),
+        model=resnet18_grayscale_model,
+    )
+
+    assert len(batches) == 2
+    assert tuple(batches[0].shape) == (2, 1, 32, 32)
+    assert batches[0].dtype == torch.float32
 
 
 def test_nonexistent_path_raises() -> None:
