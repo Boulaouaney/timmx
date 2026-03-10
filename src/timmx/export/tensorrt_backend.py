@@ -20,9 +20,11 @@ from timmx.export.common import (
     InputSizeOpt,
     MeanOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    SoftmaxOpt,
     StdOpt,
     prepare_export,
 )
@@ -147,6 +149,8 @@ class TensorRTBackend(ExportBackend):
             verbose: Annotated[
                 bool, typer.Option(help="Enable verbose TensorRT builder logging.")
             ] = False,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
         ) -> None:
@@ -158,6 +162,15 @@ class TensorRTBackend(ExportBackend):
 
             if workspace < 1:
                 raise ConfigurationError("--workspace must be >= 1 GiB.")
+
+            if (
+                mode != TensorRTMode.int8
+                and (mean is not None or std is not None)
+                and not normalize
+            ):
+                raise ConfigurationError(
+                    "--mean/--std require --normalize unless used for --mode int8 calibration."
+                )
 
             if mode != TensorRTMode.int8 and (
                 calibration_data is not None
@@ -197,6 +210,10 @@ class TensorRTBackend(ExportBackend):
                 batch_size=batch_size,
                 input_size=input_size,
                 device=device,
+                normalize=normalize,
+                softmax=softmax,
+                mean=mean if normalize else None,
+                std=std if normalize else None,
             )
 
             onnx_path: Path
@@ -268,6 +285,7 @@ class TensorRTBackend(ExportBackend):
                         random_calibration=random_calibration,
                         mean=mean,
                         std=std,
+                        normalize_images=not normalize,
                     )
                     config.int8_calibrator = calibrator
 
@@ -347,6 +365,7 @@ def _create_calibrator(
     random_calibration: bool,
     mean: tuple[float, ...] | None = None,
     std: tuple[float, ...] | None = None,
+    normalize_images: bool = True,
 ) -> object:
     batches = resolve_calibration_batches(
         calibration_data=calibration_data,
@@ -359,6 +378,7 @@ def _create_calibrator(
         random_calibration=random_calibration,
         mean=mean,
         std=std,
+        normalize_images=normalize_images,
     )
     cache_path = calibration_cache or Path("tensorrt_calibration.cache")
     calibrator_cls = _make_calibrator_class(trt)

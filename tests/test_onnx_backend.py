@@ -127,13 +127,20 @@ def test_export_onnx_softmax_and_custom_stats_round_trip(tmp_path: Path) -> None
         num_classes=None,
         in_chans=None,
     ).eval()
-    wrapped = wrap_with_preprocessing(reference_model, softmax=True, mean=mean, std=std).eval()
+    wrapped = wrap_with_preprocessing(
+        reference_model,
+        normalize=True,
+        softmax=True,
+        mean=mean,
+        std=std,
+    ).eval()
 
     output_path = tmp_path / "resnet18_softmax.onnx"
     kwargs = _build_kwargs(output_path, slim=False)
     kwargs.update(
         {
             "batch_size": 2,
+            "normalize": True,
             "softmax": True,
             "mean": mean,
             "std": std,

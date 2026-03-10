@@ -95,12 +95,14 @@ Runtime nuance:
 - For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
-- For `onnx` and `torchscript`, `--normalize` wraps the model with timm's mean/std normalization
-  (via `PrePostWrapper` in `common.py`), so exported models accept unnormalized `[0, 1]` float input.
-  `--softmax` adds a softmax output layer and implies `--normalize`. `--mean`/`--std` override the
-  timm data config for both wrapper normalization and calibration preprocessing. Other backends can
-  adopt these flags by passing `normalize`/`softmax`/`mean`/`std` to `prepare_export()` and/or
-  `resolve_calibration_batches()`.
+- For `onnx`, `torchscript`, `coreml`, `torch-export`, `ncnn`, `executorch`, `litert`, and
+  `tensorrt`, `--normalize` wraps the model with timm's mean/std normalization (via
+  `PrePostWrapper` in `common.py`), so exported models accept unnormalized `[0, 1]` float input.
+  `--softmax` adds a softmax output layer independently; combine it with `--normalize` when you want
+  both embedded preprocessing and probability outputs, or use it alone if your runtime already feeds
+  normalized tensors. `--mean`/`--std` override embedded normalization and therefore require
+  `--normalize`; for `litert`, `tensorrt`, and `executorch` int8 calibration, they also override
+  calibration image preprocessing.
 
 ## Adding a New Export Backend
 

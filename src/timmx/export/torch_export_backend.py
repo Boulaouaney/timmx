@@ -14,10 +14,14 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -44,6 +48,10 @@ class TorchExportBackend(ExportBackend):
             strict: Annotated[
                 bool, typer.Option(help="Enable strict graph capture during torch.export.")
             ] = False,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
             verify: Annotated[
                 bool,
                 typer.Option(help="Load the saved .pt2 archive after export to validate it."),
@@ -64,6 +72,10 @@ class TorchExportBackend(ExportBackend):
                 batch_size=batch_size,
                 input_size=input_size,
                 device=device,
+                normalize=normalize,
+                softmax=softmax,
+                mean=mean,
+                std=std,
             )
 
             dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None

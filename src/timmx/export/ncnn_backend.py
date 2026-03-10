@@ -15,9 +15,13 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     PretrainedOpt,
+    SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -55,6 +59,10 @@ class NcnnBackend(ExportBackend):
                 bool,
                 typer.Option(help="Export weights in fp16 precision."),
             ] = True,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
         ) -> None:
             prep = prepare_export(
                 model_name=model_name,
@@ -67,6 +75,10 @@ class NcnnBackend(ExportBackend):
                 input_size=input_size,
                 device=device,
                 output_is_dir=True,
+                normalize=normalize,
+                softmax=softmax,
+                mean=mean,
+                std=std,
             )
             output_dir = prep.output_path
 

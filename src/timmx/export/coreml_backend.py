@@ -15,10 +15,14 @@ from timmx.export.common import (
     DeviceOpt,
     InChansOpt,
     InputSizeOpt,
+    MeanOpt,
     ModelNameArg,
+    NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
     PretrainedOpt,
+    SoftmaxOpt,
+    StdOpt,
     prepare_export,
 )
 from timmx.export.types import Device
@@ -101,6 +105,10 @@ class CoreMLBackend(ExportBackend):
                 bool,
                 typer.Option("--int4", help="Quantize weights to 4-bit (mlpackage only)."),
             ] = False,
+            normalize: NormalizeOpt = False,
+            softmax: SoftmaxOpt = False,
+            mean: MeanOpt = None,
+            std: StdOpt = None,
             verify: Annotated[
                 bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
             ] = True,
@@ -145,6 +153,10 @@ class CoreMLBackend(ExportBackend):
                 batch_size=batch_size,
                 input_size=input_size,
                 device=device,
+                normalize=normalize,
+                softmax=softmax,
+                mean=mean,
+                std=std,
             )
 
             import torch
@@ -184,6 +196,7 @@ class CoreMLBackend(ExportBackend):
                     except Exception as exc:
                         raise ExportError(f"TorchScript trace failed: {exc}") from exc
 
+                # TODO: Use ImageType with native normalization
                 input_type = ct.TensorType(
                     name="input",
                     shape=_build_input_shape(

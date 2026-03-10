@@ -211,6 +211,29 @@ def test_image_dir_calibration_custom_mean_std(
     assert not torch.allclose(batches_custom[0], batches_default[0], atol=1e-3)
 
 
+def test_image_dir_calibration_can_skip_normalization(
+    tmp_path: Path, resnet18_model: torch.nn.Module
+) -> None:
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    for index in range(2):
+        Image.new("RGB", (224, 224), color=(128, 64, 192)).save(img_dir / f"img_{index:02d}.png")
+
+    batches = resolve_calibration_batches(
+        calibration_data=img_dir,
+        calibration_steps=None,
+        batch_size=2,
+        input_size=(3, 224, 224),
+        device=torch.device("cpu"),
+        model=resnet18_model,
+        normalize_images=False,
+    )
+
+    channel_means = batches[0].mean(dim=(0, 2, 3))
+    expected = torch.tensor([128 / 255, 64 / 255, 192 / 255], dtype=torch.float32)
+    assert torch.allclose(channel_means, expected, atol=1e-3)
+
+
 def test_image_dir_calibration_grayscale_model(
     tmp_path: Path, resnet18_grayscale_model: torch.nn.Module
 ) -> None:

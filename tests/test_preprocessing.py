@@ -8,6 +8,7 @@ from timm.data import resolve_data_config
 from timmx.errors import ConfigurationError
 from timmx.export.common import (
     PrePostWrapper,
+    create_timm_model,
     prepare_export,
     resolve_input_size,
     wrap_with_preprocessing,
@@ -60,6 +61,19 @@ def test_prepostwrapper_softmax_sums_to_one() -> None:
     )
 
 
+def test_prepostwrapper_softmax_without_normalization_matches_raw_logits_softmax() -> None:
+    model = _make_simple_model()
+    wrapper = PrePostWrapper(model, normalize=False, softmax=True)
+    wrapper.eval()
+
+    x = torch.rand(1, 3, 32, 32)
+    with torch.no_grad():
+        expected = torch.softmax(model(x), dim=-1)
+        actual = wrapper(x)
+
+    assert torch.allclose(expected, actual, atol=1e-5)
+
+
 def test_prepostwrapper_no_softmax_differs() -> None:
     """Without softmax, output is raw logits (not summing to 1)."""
     model = _make_simple_model()
@@ -101,6 +115,15 @@ def test_wrap_with_preprocessing_softmax() -> None:
     wrapped = wrap_with_preprocessing(model, softmax=True)
     assert isinstance(wrapped, PrePostWrapper)
     assert wrapped.softmax is True
+
+
+def test_wrap_with_preprocessing_softmax_only_skips_normalization_when_requested() -> None:
+    model = _make_simple_model()
+    wrapped = wrap_with_preprocessing(model, normalize=False, softmax=True)
+    assert isinstance(wrapped, PrePostWrapper)
+    assert wrapped.normalize is False
+    assert wrapped.mean is None
+    assert wrapped.std is None
 
 
 def test_wrap_with_preprocessing_custom_mean_std() -> None:
@@ -208,7 +231,7 @@ def test_prepare_export_wrapped_model_stays_in_eval_mode(tmp_path) -> None:
 
 
 def test_prepare_export_rejects_mean_std_without_wrapper_flags(tmp_path) -> None:
-    with pytest.raises(ConfigurationError, match="--mean/--std require --normalize or --softmax"):
+    with pytest.raises(ConfigurationError, match="--mean/--std require --normalize"):
         prepare_export(
             model_name="resnet18",
             output=tmp_path / "out.pt",
@@ -222,6 +245,41 @@ def test_prepare_export_rejects_mean_std_without_wrapper_flags(tmp_path) -> None
             mean=(0.5, 0.5, 0.5),
             std=(0.5, 0.5, 0.5),
         )
+
+
+def test_prepare_export_softmax_only_matches_raw_model_softmax(tmp_path) -> None:
+    seed = 321
+    x = torch.rand(1, 3, 32, 32)
+
+    torch.manual_seed(seed)
+    reference_model = create_timm_model(
+        "resnet18",
+        pretrained=False,
+        checkpoint=None,
+        num_classes=None,
+        in_chans=None,
+    ).eval()
+
+    torch.manual_seed(seed)
+    prep = prepare_export(
+        model_name="resnet18",
+        output=tmp_path / "out.pt",
+        checkpoint=None,
+        pretrained=False,
+        num_classes=None,
+        in_chans=None,
+        batch_size=1,
+        input_size=(3, 32, 32),
+        device="cpu",
+        softmax=True,
+    )
+
+    with torch.no_grad():
+        expected = torch.softmax(reference_model(x), dim=-1)
+        actual = prep.model(x)
+
+    assert prep.model.normalize is False
+    assert torch.allclose(actual, expected, atol=1e-5, rtol=1e-4)
 
 
 def test_resolve_input_size_uses_model_in_chans_over_timm_config() -> None:

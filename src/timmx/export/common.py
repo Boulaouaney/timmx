@@ -28,7 +28,7 @@ SoftmaxOpt = Annotated[
     bool,
     typer.Option(
         "--softmax",
-        help="Add softmax output layer (implies --normalize).",
+        help="Add softmax output layer.",
     ),
 ]
 MeanOpt = Annotated[
@@ -113,8 +113,8 @@ def prepare_export(
         input_size=input_size,
     )
 
-    if (mean is not None or std is not None) and not (normalize or softmax):
-        raise ConfigurationError("--mean/--std require --normalize or --softmax.")
+    if (mean is not None or std is not None) and not normalize:
+        raise ConfigurationError("--mean/--std require --normalize.")
 
     output_path = Path(output).expanduser().resolve()
     if output_is_dir:
@@ -143,7 +143,13 @@ def prepare_export(
     model.eval()
 
     if softmax or normalize:
-        model = wrap_with_preprocessing(model, softmax=softmax, mean=mean, std=std)
+        model = wrap_with_preprocessing(
+            model,
+            normalize=normalize,
+            softmax=softmax,
+            mean=mean,
+            std=std,
+        )
         model = model.to(torch_device)
 
     example_input = torch.randn(batch_size, *resolved_input_size, device=torch_device)
@@ -163,24 +169,33 @@ def prepare_export(
 
 
 class PrePostWrapper(torch.nn.Module):
-    """Wraps a model with input normalization and optional softmax output."""
+    """Wraps a model with optional input normalization and optional softmax output."""
 
     def __init__(
         self,
         model: torch.nn.Module,
-        mean: tuple[float, ...],
-        std: tuple[float, ...],
+        mean: tuple[float, ...] | None = None,
+        std: tuple[float, ...] | None = None,
+        normalize: bool = True,
         softmax: bool = False,
     ):
         super().__init__()
         self.model = model
-        self.register_buffer("mean", torch.tensor(mean).reshape(1, -1, 1, 1))
-        self.register_buffer("std", torch.tensor(std).reshape(1, -1, 1, 1))
+        self.normalize = normalize
+        if normalize:
+            if mean is None or std is None:
+                raise ConfigurationError("PrePostWrapper normalization requires mean/std values.")
+            self.register_buffer("mean", torch.tensor(mean).reshape(1, -1, 1, 1))
+            self.register_buffer("std", torch.tensor(std).reshape(1, -1, 1, 1))
+        else:
+            self.register_buffer("mean", None)
+            self.register_buffer("std", None)
         self.softmax = softmax
         self.train(model.training)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = (x - self.mean) / self.std
+        if self.normalize:
+            x = (x - self.mean) / self.std
         x = self.model(x)
         if self.softmax:
             x = torch.nn.functional.softmax(x, dim=-1)
@@ -189,16 +204,28 @@ class PrePostWrapper(torch.nn.Module):
 
 def wrap_with_preprocessing(
     model: torch.nn.Module,
+    normalize: bool = True,
     softmax: bool = False,
     mean: tuple[float, ...] | None = None,
     std: tuple[float, ...] | None = None,
 ) -> PrePostWrapper:
-    """Wrap model with normalization and optional softmax.
+    """Wrap model with optional normalization and optional softmax.
 
-    Uses timm's data config by default; pass *mean*/*std* to override.
+    Uses timm's data config for normalization by default; pass *mean*/*std* to override.
     """
-    effective_mean, effective_std = resolve_normalization_stats(model, mean=mean, std=std)
-    return PrePostWrapper(model, mean=effective_mean, std=effective_std, softmax=softmax)
+    effective_mean: tuple[float, ...] | None
+    effective_std: tuple[float, ...] | None
+    if normalize:
+        effective_mean, effective_std = resolve_normalization_stats(model, mean=mean, std=std)
+    else:
+        effective_mean, effective_std = None, None
+    return PrePostWrapper(
+        model,
+        mean=effective_mean,
+        std=effective_std,
+        normalize=normalize,
+        softmax=softmax,
+    )
 
 
 def resolve_model_input_channels(model: torch.nn.Module) -> int:

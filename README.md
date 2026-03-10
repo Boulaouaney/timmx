@@ -111,7 +111,7 @@ uv run timmx export onnx resnet18 \
   --output ./artifacts/resnet18_with_preprocess.onnx
 ```
 
-> `--normalize` embeds the timm model's mean/std normalization into the graph. `--softmax` adds a softmax layer on the output (implies `--normalize`). This makes the exported model self-contained — no separate preprocessing needed at inference time. For fine-tuned models with custom normalization, override with `--mean 0.5 0.5 0.5 --std 0.5 0.5 0.5`. `--in-chans` currently supports only `1` or `3`; for grayscale (`--in-chans 1`) exports, RGB mean/std values are averaged down to a single channel.
+> `--normalize` embeds the timm model's mean/std normalization into the graph. `--softmax` adds a softmax layer on the output. Use both flags together if you want a self-contained export that accepts raw `[0, 1]` float input and outputs probabilities; use `--softmax` alone if your inputs are already normalized. `--mean` / `--std` override the embedded normalization and therefore require `--normalize`. `--in-chans` currently supports only `1` or `3`; for grayscale (`--in-chans 1`) exports, RGB mean/std values are averaged down to a single channel.
 
 Exported models are automatically optimized with [onnxslim](https://github.com/inisis/OnnxSlim) (constant folding, dead-code elimination, operator fusion). To skip optimization:
 

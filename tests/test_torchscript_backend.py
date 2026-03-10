@@ -100,12 +100,19 @@ def test_export_torchscript_wrapper_round_trips_outputs_and_config(
         num_classes=None,
         in_chans=None,
     ).eval()
-    wrapped = wrap_with_preprocessing(reference_model, softmax=True, mean=mean, std=std).eval()
+    wrapped = wrap_with_preprocessing(
+        reference_model,
+        normalize=True,
+        softmax=True,
+        mean=mean,
+        std=std,
+    ).eval()
 
     output_path = tmp_path / f"resnet18_{method}_wrapped.pt"
     kwargs = _build_kwargs(
         output_path,
         method=method,
+        normalize=True,
         softmax=True,
         mean=mean,
         std=std,
