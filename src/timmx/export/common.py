@@ -33,14 +33,17 @@ SoftmaxOpt = Annotated[
 ]
 MeanOpt = Annotated[
     tuple[float, float, float] | None,
-    typer.Option(help="Custom normalization mean (3 values, one per RGB channel)."),
+    typer.Option(help="Custom normalization mean (3 RGB values; averaged for 1-channel models)."),
 ]
 StdOpt = Annotated[
     tuple[float, float, float] | None,
-    typer.Option(help="Custom normalization std (3 values, one per RGB channel)."),
+    typer.Option(help="Custom normalization std (3 RGB values; averaged for 1-channel models)."),
 ]
 
 DEFAULT_INPUT_SIZE = (3, 224, 224)
+DEFAULT_MEAN = (0.485, 0.456, 0.406)
+DEFAULT_STD = (0.229, 0.224, 0.225)
+SUPPORTED_INPUT_CHANNELS = frozenset({1, 3})
 
 # ---------------------------------------------------------------------------
 # Shared Typer type aliases for common CLI parameters
@@ -53,12 +56,15 @@ PretrainedOpt = Annotated[bool, typer.Option("--pretrained", help="Load timm pre
 NumClassesOpt = Annotated[
     int | None, typer.Option(help="Override the model classifier output classes.")
 ]
-InChansOpt = Annotated[int | None, typer.Option(help="Override model input channels.")]
+InChansOpt = Annotated[
+    int | None,
+    typer.Option(help="Override model input channels (currently 1 or 3 only)."),
+]
 BatchSizeOpt = Annotated[int, typer.Option(help="Example input batch size for export.")]
 InputSizeOpt = Annotated[
     tuple[int, int, int] | None, typer.Option(help="Explicit input shape as C H W.")
 ]
-DeviceOpt = Annotated[Device, typer.Option(help="Device used for model instantiation and tracing.")]
+DeviceOpt = Annotated[Device, typer.Option(help="Device used for model instantiation and export.")]
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +106,12 @@ def prepare_export(
     single file (e.g. ncnn).  The resolved path is then created as a directory;
     otherwise its parent directory is created.
     """
-    validate_common_args(batch_size=batch_size, device=device)
+    validate_common_args(
+        batch_size=batch_size,
+        device=device,
+        in_chans=in_chans,
+        input_size=input_size,
+    )
 
     if (mean is not None or std is not None) and not (normalize or softmax):
         raise ConfigurationError("--mean/--std require --normalize or --softmax.")
@@ -119,6 +130,13 @@ def prepare_export(
         in_chans=in_chans,
     )
     resolved_input_size = resolve_input_size(model, input_size)
+    model_input_channels = resolve_model_input_channels(model)
+    validate_supported_input_channels(model_input_channels, source="model")
+    if resolved_input_size[0] != model_input_channels:
+        raise ConfigurationError(
+            "--input-size channel count must match the model input channels: "
+            f"expected {model_input_channels}, got {resolved_input_size[0]}."
+        )
 
     torch_device = torch.device(device)
     model = model.to(torch_device)
@@ -179,10 +197,82 @@ def wrap_with_preprocessing(
 
     Uses timm's data config by default; pass *mean*/*std* to override.
     """
-    config = resolve_data_config(model=model)
-    effective_mean = mean if mean is not None else config.get("mean", (0.485, 0.456, 0.406))
-    effective_std = std if std is not None else config.get("std", (0.229, 0.224, 0.225))
+    effective_mean, effective_std = resolve_normalization_stats(model, mean=mean, std=std)
     return PrePostWrapper(model, mean=effective_mean, std=effective_std, softmax=softmax)
+
+
+def resolve_model_input_channels(model: torch.nn.Module) -> int:
+    raw_channels = getattr(model, "in_chans", None)
+    if isinstance(raw_channels, int):
+        return raw_channels
+
+    config = resolve_data_config(model=model)
+    raw_input_size = config.get("input_size")
+    if isinstance(raw_input_size, tuple) and len(raw_input_size) == 3:
+        return int(raw_input_size[0])
+    if isinstance(raw_input_size, list) and len(raw_input_size) == 3:
+        return int(raw_input_size[0])
+
+    return DEFAULT_INPUT_SIZE[0]
+
+
+def resolve_normalization_stats(
+    model: torch.nn.Module,
+    *,
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    config = resolve_data_config(model=model)
+    input_channels = resolve_model_input_channels(model)
+    return resolve_normalization_stats_for_channels(
+        input_channels=input_channels,
+        mean=mean,
+        std=std,
+        default_mean=config.get("mean", DEFAULT_MEAN),
+        default_std=config.get("std", DEFAULT_STD),
+    )
+
+
+def resolve_normalization_stats_for_channels(
+    *,
+    input_channels: int,
+    mean: tuple[float, ...] | None = None,
+    std: tuple[float, ...] | None = None,
+    default_mean: tuple[float, ...] | list[float] | None = DEFAULT_MEAN,
+    default_std: tuple[float, ...] | list[float] | None = DEFAULT_STD,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    validate_supported_input_channels(input_channels, source="input")
+
+    raw_mean = mean if mean is not None else (default_mean or DEFAULT_MEAN)
+    raw_std = std if std is not None else (default_std or DEFAULT_STD)
+    return (
+        _coerce_stats_for_channels(raw_mean, input_channels, stat_name="mean"),
+        _coerce_stats_for_channels(raw_std, input_channels, stat_name="std"),
+    )
+
+
+def validate_supported_input_channels(channels: int, *, source: str) -> None:
+    if channels not in SUPPORTED_INPUT_CHANNELS:
+        raise ConfigurationError(f"{source} input channels must be 1 or 3 for now, got {channels}.")
+
+
+def _coerce_stats_for_channels(
+    stats: tuple[float, ...] | list[float],
+    input_channels: int,
+    *,
+    stat_name: str,
+) -> tuple[float, ...]:
+    values = tuple(float(v) for v in stats)
+    if len(values) == input_channels:
+        return values
+    if len(values) == 3 and input_channels == 1:
+        return (sum(values) / len(values),)
+    if len(values) == 1 and input_channels == 3:
+        return values * 3
+    raise ConfigurationError(
+        f"Normalization {stat_name} has {len(values)} values but only "
+        "1-value and 3-value stats are supported."
+    )
 
 
 def create_timm_model(
@@ -193,6 +283,9 @@ def create_timm_model(
     num_classes: int | None,
     in_chans: int | None,
 ) -> torch.nn.Module:
+    if in_chans is not None:
+        validate_supported_input_channels(in_chans, source="--in-chans")
+
     create_kwargs: dict[str, object] = {
         "pretrained": pretrained,
         "exportable": True,
@@ -224,20 +317,34 @@ def resolve_input_size(
     requested: tuple[int, int, int] | None,
 ) -> tuple[int, int, int]:
     if requested is not None:
+        validate_supported_input_channels(requested[0], source="--input-size")
         return requested
+
+    input_channels = resolve_model_input_channels(model)
+    validate_supported_input_channels(input_channels, source="model")
 
     config = resolve_data_config(model=model)
     raw_input_size = config.get("input_size")
     if isinstance(raw_input_size, tuple) and len(raw_input_size) == 3:
-        return int(raw_input_size[0]), int(raw_input_size[1]), int(raw_input_size[2])
+        return input_channels, int(raw_input_size[1]), int(raw_input_size[2])
     if isinstance(raw_input_size, list) and len(raw_input_size) == 3:
-        return int(raw_input_size[0]), int(raw_input_size[1]), int(raw_input_size[2])
+        return input_channels, int(raw_input_size[1]), int(raw_input_size[2])
 
-    return DEFAULT_INPUT_SIZE
+    return input_channels, DEFAULT_INPUT_SIZE[1], DEFAULT_INPUT_SIZE[2]
 
 
-def validate_common_args(*, batch_size: int, device: str) -> None:
+def validate_common_args(
+    *,
+    batch_size: int,
+    device: str,
+    in_chans: int | None = None,
+    input_size: tuple[int, int, int] | None = None,
+) -> None:
     if batch_size < 1:
         raise ConfigurationError("--batch-size must be >= 1.")
     if device == "cuda" and not torch.cuda.is_available():
         raise ConfigurationError("--device cuda was requested but CUDA is unavailable.")
+    if in_chans is not None:
+        validate_supported_input_channels(in_chans, source="--in-chans")
+    if input_size is not None:
+        validate_supported_input_channels(input_size[0], source="--input-size")

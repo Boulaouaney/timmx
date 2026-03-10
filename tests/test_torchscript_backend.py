@@ -64,6 +64,25 @@ def test_export_torchscript_verify_runs_forward_pass(tmp_path: Path) -> None:
     assert out.shape == (1, 1000)
 
 
+def test_export_torchscript_grayscale_normalize_uses_single_channel_stats(tmp_path: Path) -> None:
+    output_path = tmp_path / "resnet18_grayscale.pt"
+    kwargs = _build_kwargs(
+        output_path,
+        in_chans=1,
+        input_size=(1, 32, 32),
+        normalize=True,
+    )
+
+    TorchScriptBackend().create_command()(**kwargs)
+
+    loaded = torch.jit.load(str(output_path))
+    out = loaded(torch.randn(1, 1, 32, 32))
+
+    assert out.shape == (1, 1000)
+    assert tuple(loaded.mean.shape) == (1, 1, 1, 1)
+    assert tuple(loaded.std.shape) == (1, 1, 1, 1)
+
+
 @pytest.mark.parametrize("method", ["trace", "script"])
 def test_export_torchscript_wrapper_round_trips_outputs_and_config(
     tmp_path: Path, method: str

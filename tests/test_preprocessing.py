@@ -6,12 +6,17 @@ import torch
 from timm.data import resolve_data_config
 
 from timmx.errors import ConfigurationError
-from timmx.export.common import PrePostWrapper, prepare_export, wrap_with_preprocessing
+from timmx.export.common import (
+    PrePostWrapper,
+    prepare_export,
+    resolve_input_size,
+    wrap_with_preprocessing,
+)
 
 
-def _make_simple_model() -> torch.nn.Module:
+def _make_simple_model(*, in_chans: int = 3) -> torch.nn.Module:
     """Create a small timm model for testing."""
-    model = timm.create_model("resnet18", pretrained=False, exportable=True)
+    model = timm.create_model("resnet18", pretrained=False, exportable=True, in_chans=in_chans)
     model.eval()
     return model
 
@@ -152,6 +157,24 @@ def test_wrap_with_preprocessing_zero_mean_std() -> None:
         assert abs(a - b) < 1e-6, f"Std not preserved: got {a}, expected {b}"
 
 
+def test_wrap_with_preprocessing_grayscale_averages_rgb_stats() -> None:
+    model = _make_simple_model(in_chans=1)
+    custom_mean = (0.2, 0.4, 0.6)
+    custom_std = (0.3, 0.6, 0.9)
+
+    wrapped = wrap_with_preprocessing(model, mean=custom_mean, std=custom_std)
+
+    assert tuple(wrapped.mean.shape) == (1, 1, 1, 1)
+    assert tuple(wrapped.std.shape) == (1, 1, 1, 1)
+    assert abs(float(wrapped.mean.item()) - (sum(custom_mean) / 3)) < 1e-6
+    assert abs(float(wrapped.std.item()) - (sum(custom_std) / 3)) < 1e-6
+
+    x = torch.rand(1, 1, 32, 32)
+    with torch.no_grad():
+        out = wrapped(x)
+    assert out.shape == (1, 1000)
+
+
 def test_wrap_with_preprocessing_preserves_wrapped_model_mode() -> None:
     train_model = _make_simple_model()
     train_model.train()
@@ -198,4 +221,63 @@ def test_prepare_export_rejects_mean_std_without_wrapper_flags(tmp_path) -> None
             device="cpu",
             mean=(0.5, 0.5, 0.5),
             std=(0.5, 0.5, 0.5),
+        )
+
+
+def test_resolve_input_size_uses_model_in_chans_over_timm_config() -> None:
+    model = _make_simple_model(in_chans=1)
+
+    assert resolve_input_size(model, None) == (1, 224, 224)
+
+
+def test_prepare_export_grayscale_wrapper_runs_forward_pass(tmp_path) -> None:
+    prep = prepare_export(
+        model_name="resnet18",
+        output=tmp_path / "out.pt",
+        checkpoint=None,
+        pretrained=False,
+        num_classes=None,
+        in_chans=1,
+        batch_size=1,
+        input_size=(1, 32, 32),
+        device="cpu",
+        normalize=True,
+    )
+
+    assert tuple(prep.example_input.shape) == (1, 1, 32, 32)
+    assert tuple(prep.model.mean.shape) == (1, 1, 1, 1)
+    with torch.no_grad():
+        out = prep.model(prep.example_input)
+    assert out.shape == (1, 1000)
+
+
+@pytest.mark.parametrize("bad_in_chans", [0, 2, 4])
+def test_prepare_export_rejects_unsupported_in_chans(tmp_path, bad_in_chans: int) -> None:
+    with pytest.raises(ConfigurationError, match="--in-chans input channels must be 1 or 3"):
+        prepare_export(
+            model_name="resnet18",
+            output=tmp_path / "out.pt",
+            checkpoint=None,
+            pretrained=False,
+            num_classes=None,
+            in_chans=bad_in_chans,
+            batch_size=1,
+            input_size=(3, 32, 32),
+            device="cpu",
+        )
+
+
+def test_prepare_export_rejects_input_size_channel_mismatch(tmp_path) -> None:
+    with pytest.raises(ConfigurationError, match="--input-size channel count must match"):
+        prepare_export(
+            model_name="resnet18",
+            output=tmp_path / "out.pt",
+            checkpoint=None,
+            pretrained=False,
+            num_classes=None,
+            in_chans=1,
+            batch_size=1,
+            input_size=(3, 32, 32),
+            device="cpu",
+            normalize=True,
         )

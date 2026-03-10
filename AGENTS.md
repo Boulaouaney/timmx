@@ -59,6 +59,8 @@ Every backend must:
 The CLI must remain format-agnostic and dispatch through the registry.
 
 Runtime nuance:
+- `--in-chans` currently supports only `1` or `3`. For 1-channel models, shared
+  normalization/calibration helpers average RGB mean/std values down to a single grayscale value.
 - For `onnx`, `--slim` (default `True`) runs onnxslim after export for graph optimization (constant
   folding, dead-code elimination, operator fusion); disable with `--no-slim`.
 - For `coreml`, `--source` selects model capture: `trace` (default, `torch.jit.trace`) or

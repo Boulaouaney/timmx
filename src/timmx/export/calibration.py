@@ -7,6 +7,10 @@ import torch
 
 from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
+from timmx.export.common import (
+    resolve_normalization_stats_for_channels,
+    validate_supported_input_channels,
+)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif"}
 DEFAULT_CALIBRATION_SAMPLES = 128
@@ -25,6 +29,8 @@ def resolve_calibration_batches(
     mean: tuple[float, ...] | None = None,
     std: tuple[float, ...] | None = None,
 ) -> list[torch.Tensor]:
+    validate_supported_input_channels(input_size[0], source="calibration input")
+
     if calibration_steps is not None and calibration_steps < 1:
         raise ConfigurationError("--calibration-steps must be >= 1.")
 
@@ -155,17 +161,21 @@ def _load_calibration_images(
 
     data_config = resolve_data_config(model=model)
     data_config["input_size"] = input_size
-    if mean is not None:
-        data_config["mean"] = mean
-    if std is not None:
-        data_config["std"] = std
+    data_config["mean"], data_config["std"] = resolve_normalization_stats_for_channels(
+        input_channels=input_size[0],
+        mean=mean,
+        std=std,
+        default_mean=data_config.get("mean"),
+        default_std=data_config.get("std"),
+    )
     transform = create_transform(**data_config, is_training=False)
+    image_mode = "L" if input_size[0] == 1 else "RGB"
 
     tensors: list[torch.Tensor] = []
     skipped = 0
     for path in image_paths:
         try:
-            img = Image.open(path).convert("RGB")
+            img = Image.open(path).convert(image_mode)
             tensor = transform(img)
             tensors.append(tensor)
         except Exception as exc:
