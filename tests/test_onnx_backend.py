@@ -146,7 +146,11 @@ def test_export_onnx_softmax_and_custom_stats_round_trip(tmp_path: Path) -> None
     exported = onnx.load(str(output_path))
     assert "Softmax" in {node.op_type for node in exported.graph.node}
 
-    constants = [array.flatten() for array in _constant_arrays(exported) if tuple(array.shape) == (1, 3, 1, 1)]
+    constants = [
+        array.flatten()
+        for array in _constant_arrays(exported)
+        if tuple(array.shape) == (1, 3, 1, 1)
+    ]
     assert any(np.allclose(array, np.array(mean), atol=1e-6) for array in constants)
     assert any(np.allclose(array, np.array(std), atol=1e-6) for array in constants)
 
