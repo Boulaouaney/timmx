@@ -111,7 +111,9 @@ def doctor() -> None:
             status = DependencyStatus(
                 available=False,
                 missing_packages=[name],
-                install_hint=f"pip install 'timmx[{name}]'",
+                install_hint=f"pip install 'timmx[{name}]'"
+                if name != "tensorrt"
+                else "pip install tensorrt",
             )
         if status.available:
             table.add_row(name, "[green]:white_check_mark: available[/green]", "")
