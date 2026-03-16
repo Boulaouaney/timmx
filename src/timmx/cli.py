@@ -105,7 +105,14 @@ def doctor() -> None:
     all_available = True
 
     for name, backend in registry.items():
-        status = _quiet_check(backend)
+        try:
+            status = _quiet_check(backend)
+        except Exception:
+            status = DependencyStatus(
+                available=False,
+                missing_packages=[name],
+                install_hint=f"pip install 'timmx[{name}]'",
+            )
         if status.available:
             table.add_row(name, "[green]:white_check_mark: available[/green]", "")
         else:
@@ -122,8 +129,8 @@ def doctor() -> None:
     if not all_available:
         console.print()
         console.print(
-            "[dim]Tip: pip install 'timmx\\[all]' installs all"
-            " non-platform-specific backends.[/dim]"
+            "[dim]Tip: install missing backends with the install hints above, "
+            "e.g. pip install 'timmx\\[onnx]'[/dim]"
         )
 
 
