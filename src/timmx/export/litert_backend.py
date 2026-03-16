@@ -243,6 +243,8 @@ def _prepare_pt2e_quantized_module(
                 prepared_module(calibration_batch)
 
         quantized_module = quantize_pt2e.convert_pt2e(prepared_module, fold_quantize=False)
+        # Suppress LiteRT training-mode warning; graph already has eval semantics.
+        quantized_module.training = False
     except Exception as exc:
         mode_label = "dynamic-int8" if is_dynamic else "int8"
         raise ExportError(f"Failed to prepare {mode_label} PT2E quantized model: {exc}") from exc
