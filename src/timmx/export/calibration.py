@@ -220,7 +220,7 @@ def _load_calibration_images(
 
 def _load_calibration_tensor(resolved_path: Path) -> torch.Tensor:
     try:
-        payload = torch.load(resolved_path, map_location="cpu", weights_only=False)
+        payload = torch.load(resolved_path, map_location="cpu", weights_only=True)
     except Exception as exc:
         raise ExportError(f"Failed to load calibration data from {resolved_path}: {exc}") from exc
 
