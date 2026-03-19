@@ -194,6 +194,10 @@ class PrePostWrapper(torch.nn.Module):
             self.register_buffer("mean", torch.zeros(1))
             self.register_buffer("std", torch.ones(1))
         self.softmax = softmax
+        # Forward timm metadata so resolve_data_config() works on the wrapper
+        # (needed for calibration transforms: crop_pct, interpolation, etc.)
+        if hasattr(model, "pretrained_cfg"):
+            self.pretrained_cfg = model.pretrained_cfg
         self.train(model.training)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -109,6 +109,19 @@ def test_wrap_with_preprocessing_uses_timm_config() -> None:
         assert abs(a - b) < 1e-6
 
 
+def test_wrapper_preserves_data_config_for_calibration() -> None:
+    """Regression: resolve_data_config on a wrapped model must return the base model's config."""
+    model = timm.create_model("vit_tiny_patch16_224", pretrained=False, exportable=True)
+    base_config = resolve_data_config(model=model)
+
+    wrapped = wrap_with_preprocessing(model, normalize=True, softmax=False)
+    wrapper_config = resolve_data_config(model=wrapped)
+
+    assert wrapper_config["crop_pct"] == base_config["crop_pct"]
+    assert wrapper_config["interpolation"] == base_config["interpolation"]
+    assert wrapper_config["input_size"] == base_config["input_size"]
+
+
 def test_wrap_with_preprocessing_softmax() -> None:
     """wrap_with_preprocessing with softmax=True enables softmax."""
     model = _make_simple_model()
