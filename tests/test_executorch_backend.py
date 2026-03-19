@@ -308,6 +308,46 @@ def test_export_xnnpack_dynamic_batch(tmp_path: Path) -> None:
 
 
 @requires_executorch
+def test_pt2e_quantized_module_exported_in_eval_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import executorch.exir as exir
+
+    captured: dict[str, object] = {}
+    original_export = torch.export.export
+
+    def tracking_export(model, *args, **kwargs):
+        # The second torch.export.export call in _export_quantized passes
+        # dynamic_shapes; internal PT2E calls do not.
+        if "dynamic_shapes" in kwargs:
+            captured["training"] = model.training
+        return original_export(model, *args, **kwargs)
+
+    class _FakeExecuTorchProgram:
+        def write_to_file(self, handle) -> None:
+            handle.write(b"pte")
+
+    class _FakeLoweredProgram:
+        def to_executorch(self) -> _FakeExecuTorchProgram:
+            return _FakeExecuTorchProgram()
+
+    def fake_lower(exported_program, **kwargs):
+        return _FakeLoweredProgram()
+
+    monkeypatch.setattr(torch.export, "export", tracking_export)
+    monkeypatch.setattr(exir, "to_edge_transform_and_lower", fake_lower)
+    monkeypatch.setattr("timmx.export.executorch_backend._build_partitioner", lambda **_: [])
+
+    output = tmp_path / "model_int8_eval.pte"
+    ExecuTorchBackend().create_command()(
+        **_build_kwargs(output, mode="int8", random_calibration=True)
+    )
+
+    assert output.exists()
+    assert captured["training"] is False
+
+
+@requires_executorch
 def test_export_xnnpack_int8(tmp_path: Path) -> None:
     output = tmp_path / "model_int8.pte"
     backend = ExecuTorchBackend()
