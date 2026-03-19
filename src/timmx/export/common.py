@@ -117,10 +117,13 @@ def prepare_export(
         raise ConfigurationError("--mean/--std require --normalize.")
 
     output_path = Path(output).expanduser().resolve()
-    if output_is_dir:
-        output_path.mkdir(parents=True, exist_ok=True)
-    else:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if output_is_dir:
+            output_path.mkdir(parents=True, exist_ok=True)
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigurationError(f"Cannot create output path {output_path}: {exc}") from exc
 
     model = create_timm_model(
         model_name,
