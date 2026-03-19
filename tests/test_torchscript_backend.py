@@ -130,3 +130,29 @@ def test_export_torchscript_wrapper_round_trips_outputs_and_config(
     assert torch.allclose(out.sum(dim=-1), torch.ones(1), atol=1e-5)
     assert torch.allclose(loaded.mean.detach().flatten(), torch.tensor(mean), atol=1e-6)
     assert torch.allclose(loaded.std.detach().flatten(), torch.tensor(std), atol=1e-6)
+
+
+@pytest.mark.parametrize("method", ["trace", "script"])
+def test_export_torchscript_softmax_only(tmp_path: Path, method: str) -> None:
+    """Regression: --softmax without --normalize must work with both trace and script."""
+    seed = 456
+    x = torch.rand(1, 3, 32, 32)
+
+    torch.manual_seed(seed)
+    reference_model = create_timm_model(
+        "resnet18", pretrained=False, checkpoint=None, num_classes=None, in_chans=None
+    ).eval()
+
+    output_path = tmp_path / f"resnet18_{method}_softmax.pt"
+    kwargs = _build_kwargs(output_path, method=method, softmax=True)
+
+    torch.manual_seed(seed)
+    TorchScriptBackend().create_command()(**kwargs)
+
+    loaded = torch.jit.load(str(output_path))
+    with torch.no_grad():
+        out = loaded(x)
+        expected = torch.softmax(reference_model(x), dim=-1)
+
+    assert torch.allclose(out, expected, atol=1e-5)
+    assert torch.allclose(out.sum(dim=-1), torch.ones(1), atol=1e-5)

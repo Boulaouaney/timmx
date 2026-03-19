@@ -188,8 +188,11 @@ class PrePostWrapper(torch.nn.Module):
             self.register_buffer("mean", torch.tensor(mean).reshape(1, -1, 1, 1))
             self.register_buffer("std", torch.tensor(std).reshape(1, -1, 1, 1))
         else:
-            self.register_buffer("mean", None)
-            self.register_buffer("std", None)
+            # Use identity-normalization tensors so TorchScript sees concrete Tensor
+            # types instead of Optional[Tensor] (which fails static type-checking of
+            # the normalize branch even when self.normalize is False).
+            self.register_buffer("mean", torch.zeros(1))
+            self.register_buffer("std", torch.ones(1))
         self.softmax = softmax
         self.train(model.training)
 

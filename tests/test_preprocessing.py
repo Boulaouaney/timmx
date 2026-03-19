@@ -122,8 +122,8 @@ def test_wrap_with_preprocessing_softmax_only_skips_normalization_when_requested
     wrapped = wrap_with_preprocessing(model, normalize=False, softmax=True)
     assert isinstance(wrapped, PrePostWrapper)
     assert wrapped.normalize is False
-    assert wrapped.mean is None
-    assert wrapped.std is None
+    assert torch.equal(wrapped.mean, torch.zeros(1))
+    assert torch.equal(wrapped.std, torch.ones(1))
 
 
 def test_wrap_with_preprocessing_custom_mean_std() -> None:
