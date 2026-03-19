@@ -77,6 +77,10 @@ class OnnxBackend(ExportBackend):
         ) -> None:
             if opset < 7:
                 raise ConfigurationError("--opset must be >= 7.")
+            if dynamic_batch and batch_size < 2:
+                raise ConfigurationError(
+                    "--dynamic-batch requires --batch-size >= 2 for stable symbolic shape capture."
+                )
 
             prep = prepare_export(
                 model_name=model_name,

@@ -74,6 +74,7 @@ def test_export_onnx_without_slim(tmp_path: Path) -> None:
 def test_dynamic_batch_creates_symbolic_batch_dimension(tmp_path: Path) -> None:
     output_path = tmp_path / "resnet18_dynamic.onnx"
     kwargs = _build_kwargs(output_path, dynamic_batch=True)
+    kwargs["batch_size"] = 2
 
     backend = OnnxBackend()
     command = backend.create_command()
