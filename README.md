@@ -374,6 +374,7 @@ uv run timmx export executorch resnet18 \
   --pretrained \
   --delegate coreml \
   --mode int8 \
+  --random-calibration \
   --output ./artifacts/resnet18_coreml_int8.pte
 ```
 

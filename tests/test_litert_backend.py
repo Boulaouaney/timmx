@@ -386,3 +386,19 @@ def test_export_litert_int8_with_calibration_data_file(
     command(**kwargs)
 
     assert output_path.exists()
+
+
+def test_pt2e_quantized_module_is_in_eval_mode() -> None:
+    from timmx.export.litert_backend import _prepare_pt2e_quantized_module
+
+    model = _ConvModel().eval()
+    example_input = torch.randn(2, 3, 16, 16)
+    calibration_batches = [torch.randn(2, 3, 16, 16)]
+
+    quantized, _ = _prepare_pt2e_quantized_module(
+        model,
+        example_input,
+        calibration_batches=calibration_batches,
+        is_dynamic=False,
+    )
+    assert quantized.training is False
