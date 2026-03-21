@@ -128,7 +128,7 @@ def _slice_into_batches(
 # ---------------------------------------------------------------------------
 
 
-def _collect_image_paths(image_dir: Path) -> list[Path]:
+def collect_image_paths(image_dir: Path) -> list[Path]:
     """Recursively collect image file paths from a directory."""
     paths = [
         p
@@ -156,7 +156,7 @@ def _load_calibration_images(
     from PIL import Image
     from timm.data import create_transform, resolve_data_config
 
-    image_paths = _collect_image_paths(image_dir)
+    image_paths = collect_image_paths(image_dir)
 
     if len(image_paths) > max_samples:
         rng = random.Random(42)

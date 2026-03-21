@@ -15,6 +15,7 @@ keywords = [
   "model-export",
   "onnx",
   "pytorch",
+  "rknn",
   "tensorrt",
   "timm"
 ]
