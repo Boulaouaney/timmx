@@ -12,6 +12,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
 | ncnn | `timmx export ncnn` | directory (`.param` + `.bin`) |
 | TensorRT | `timmx export tensorrt` | `.engine` |
+| RKNN | `timmx export rknn` | `.rknn` |
 | ExecuTorch | `timmx export executorch` | `.pte` |
 | torch.export | `timmx export torch-export` | `.pt2` |
 | TorchScript | `timmx export torchscript` | `.pt` |
@@ -44,6 +45,12 @@ TensorRT requires CUDA and must be installed separately:
 
 ```bash
 pip install tensorrt  # Linux/Windows with CUDA only
+```
+
+RKNN requires Linux and must be installed separately:
+
+```bash
+pip install rknn-toolkit2  # Linux x86_64/aarch64 only, Python 3.11-3.12
 ```
 
 > **Note:** The `executorch` and `litert` extras have conflicting torch version
@@ -317,6 +324,45 @@ uv run timmx export tensorrt resnet18 \
   --output ./artifacts/resnet18_dynamic.engine
 ```
 
+### RKNN
+
+Requires Linux (x86_64 or aarch64) and the `rknn-toolkit2` package. Exports via an ONNX intermediate for Rockchip NPUs.
+
+Basic INT8 export for RK3588:
+
+```bash
+uv run timmx export rknn resnet18 \
+  --pretrained \
+  --target-platform rk3588 \
+  --mode int8 \
+  --calibration-data ./my-images/ \
+  --output ./artifacts/resnet18.rknn
+```
+
+FP16 export (no quantization):
+
+```bash
+uv run timmx export rknn resnet18 \
+  --pretrained \
+  --target-platform rk3588 \
+  --mode fp16 \
+  --output ./artifacts/resnet18_fp16.rknn
+```
+
+INT8 with MMSE quantization algorithm (better accuracy, slower):
+
+```bash
+uv run timmx export rknn resnet18 \
+  --pretrained \
+  --target-platform rk3566 \
+  --mode int8 \
+  --quant-algorithm mmse \
+  --calibration-data ./my-images/ \
+  --output ./artifacts/resnet18_int8_mmse.rknn
+```
+
+> **Note:** Unlike other backends, RKNN handles normalization natively via its runtime config. For best INT8 calibration accuracy, omit `--normalize` and let RKNN handle normalization internally. RKNN does not support dynamic batch sizes — models are compiled with a fixed batch size. Calibration only accepts image directories (not tensor files or `--random-calibration`).
+
 ### ExecuTorch
 
 Export with XNNPack delegation (default, runs on CPU across all platforms):
@@ -463,7 +509,7 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
 - [ ] TFLite Edge TPU
-- [ ] RKNN
+- [x] RKNN
 - [ ] MNN
 - [ ] PaddlePaddle
 
