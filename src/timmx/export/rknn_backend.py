@@ -41,6 +41,11 @@ DEFAULT_OPSET = 19
 MAX_OPSET = 19
 
 
+class RknnSource(StrEnum):
+    torchscript = "torchscript"
+    onnx = "onnx"
+
+
 class RknnMode(StrEnum):
     fp32 = "fp32"
     fp16 = "fp16"
@@ -60,7 +65,7 @@ class RknnQuantMethod(StrEnum):
 
 class RknnBackend(ExportBackend):
     name = "rknn"
-    help = "Export a timm model to RKNN for Rockchip NPUs via ONNX."
+    help = "Export a timm model to RKNN for Rockchip NPUs."
 
     def check_dependencies(self) -> DependencyStatus:
         if sys.platform != "linux":
@@ -93,6 +98,12 @@ class RknnBackend(ExportBackend):
             batch_size: BatchSizeOpt = 1,
             input_size: InputSizeOpt = None,
             device: DeviceOpt = Device.cpu,
+            source: Annotated[
+                RknnSource,
+                typer.Option(
+                    help="Intermediate format: torchscript (default, no onnx dep) or onnx."
+                ),
+            ] = RknnSource.torchscript,
             target_platform: Annotated[
                 str,
                 typer.Option(
@@ -142,14 +153,14 @@ class RknnBackend(ExportBackend):
                 ),
             ] = False,
             opset: Annotated[
-                int,
-                typer.Option(help="ONNX opset version for intermediate export."),
-            ] = DEFAULT_OPSET,
+                int | None,
+                typer.Option(help="ONNX opset version (only for --source onnx)."),
+            ] = None,
             keep_onnx: Annotated[
                 bool,
                 typer.Option(
                     "--keep-onnx",
-                    help="Keep the intermediate ONNX file alongside the output.",
+                    help="Keep the intermediate ONNX file (only for --source onnx).",
                 ),
             ] = False,
             normalize: NormalizeOpt = False,
@@ -166,14 +177,23 @@ class RknnBackend(ExportBackend):
                     f"Current platform: {sys.platform}."
                 )
 
+            if source == RknnSource.torchscript:
+                if opset is not None:
+                    raise ConfigurationError("--opset is only valid with --source onnx.")
+                if keep_onnx:
+                    raise ConfigurationError("--keep-onnx is only valid with --source onnx.")
+
+            if source == RknnSource.onnx:
+                _check_onnx_version()
+                effective_opset = opset if opset is not None else DEFAULT_OPSET
+                if effective_opset < 7 or effective_opset > MAX_OPSET:
+                    raise ConfigurationError(f"--opset must be between 7 and {MAX_OPSET}.")
+
             if random_calibration:
                 raise ConfigurationError(
                     "RKNN does not support --random-calibration. "
                     "Provide real images via --calibration-data <image-directory>."
                 )
-
-            if opset < 7 or opset > MAX_OPSET:
-                raise ConfigurationError(f"--opset must be between 7 and {MAX_OPSET}.")
 
             if mode != RknnMode.int8 and (mean is not None or std is not None) and not normalize:
                 raise ConfigurationError(
@@ -233,38 +253,51 @@ class RknnBackend(ExportBackend):
                 std=std if normalize else None,
             )
 
+            # Import RKNN before creating temp dirs so a missing
+            # rknn-toolkit2 doesn't leak temporary files.
+            RKNN = _import_rknn()
+
             # ----------------------------------------------------------
-            # Intermediate ONNX export
+            # Intermediate export (TorchScript or ONNX)
             # ----------------------------------------------------------
-            onnx_path: Path
             temp_dir: tempfile.TemporaryDirectory[str] | None = None
+            intermediate_path: Path
 
-            if keep_onnx:
-                onnx_path = prep.output_path.with_suffix(".onnx")
-            else:
+            if source == RknnSource.torchscript:
                 temp_dir = tempfile.TemporaryDirectory()
-                onnx_path = Path(temp_dir.name) / "model.onnx"
-
-            try:
-                torch.onnx.export(
-                    prep.model,
-                    (prep.example_input,),
-                    f=str(onnx_path),
-                    opset_version=opset,
-                    input_names=["input"],
-                    output_names=["output"],
-                )
-            except Exception as exc:
-                if temp_dir is not None:
+                intermediate_path = Path(temp_dir.name) / "model.pt"
+                try:
+                    with torch.no_grad():
+                        traced = torch.jit.trace(prep.model, prep.example_input)
+                    torch.jit.save(traced, str(intermediate_path))
+                except Exception as exc:
                     temp_dir.cleanup()
-                raise ExportError(f"Intermediate ONNX export failed: {exc}") from exc
+                    raise ExportError(f"TorchScript trace failed: {exc}") from exc
+            else:
+                if keep_onnx:
+                    intermediate_path = prep.output_path.with_suffix(".onnx")
+                else:
+                    temp_dir = tempfile.TemporaryDirectory()
+                    intermediate_path = Path(temp_dir.name) / "model.onnx"
+                try:
+                    torch.onnx.export(
+                        prep.model,
+                        (prep.example_input,),
+                        f=str(intermediate_path),
+                        opset_version=effective_opset,  # noqa: F821
+                        input_names=["input"],
+                        output_names=["output"],
+                        dynamo=False,
+                    )
+                except Exception as exc:
+                    if temp_dir is not None:
+                        temp_dir.cleanup()
+                    raise ExportError(f"Intermediate ONNX export failed: {exc}") from exc
 
             # ----------------------------------------------------------
             # RKNN conversion
             # ----------------------------------------------------------
-            RKNN = _import_rknn()
             rknn = RKNN()
-            calibration_txt: Path | None = None
             cal_temp_dir: tempfile.TemporaryDirectory[str] | None = None
 
             try:
@@ -303,11 +336,20 @@ class RknnBackend(ExportBackend):
                 if ret != 0:
                     raise ExportError(f"RKNN config failed (code {ret}).")
 
-                # --- Load ONNX ---
+                # --- Load model ---
                 input_shape = [batch_size, *prep.resolved_input_size]
-                ret = rknn.load_onnx(model=str(onnx_path), input_size_list=[input_shape])
-                if ret != 0:
-                    raise ExportError(f"RKNN failed to load ONNX model (code {ret}).")
+                if source == RknnSource.torchscript:
+                    ret = rknn.load_pytorch(
+                        model=str(intermediate_path), input_size_list=[input_shape]
+                    )
+                    if ret != 0:
+                        raise ExportError(f"RKNN failed to load TorchScript model (code {ret}).")
+                else:
+                    ret = rknn.load_onnx(
+                        model=str(intermediate_path), input_size_list=[input_shape]
+                    )
+                    if ret != 0:
+                        raise ExportError(f"RKNN failed to load ONNX model (code {ret}).")
 
                 # --- Build ---
                 build_kwargs: dict[str, object] = {}
@@ -354,6 +396,22 @@ class RknnBackend(ExportBackend):
                     temp_dir.cleanup()
 
         return command
+
+
+MAX_ONNX_VERSION = (1, 18, 99)
+
+
+def _check_onnx_version() -> None:
+    try:
+        from onnx import version as onnx_version
+    except ImportError:
+        return  # onnx will fail at export time with a clearer message
+    parts = tuple(int(p) for p in onnx_version.version.split(".")[:3])
+    if parts > MAX_ONNX_VERSION:
+        raise ConfigurationError(
+            f"rknn-toolkit2 requires onnx < 1.19 (installed {onnx_version.version}). "
+            'Install a compatible version: pip install "onnx>=1.16,<1.19"'
+        )
 
 
 def _import_rknn() -> type:
