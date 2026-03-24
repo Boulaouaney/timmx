@@ -274,8 +274,7 @@ def _map_compute_precision(value: str, ct: object) -> object:
 
 def _quantize_weights(coreml_model: object, *, bits: int, is_mlprogram: bool, ct: object) -> object:
     if not is_mlprogram:
-        # neuralnetwork: linear quantization (no scikit-learn needed)
-        mode = "linear" if bits == 16 else "linear_symmetric"
+        mode = "linear" if bits == 16 else "kmeans_lut"
         console.print(f"[bold]Quantizing weights to {bits}-bit ({mode})...[/bold]")
         return ct.models.neural_network.quantization_utils.quantize_weights(
             coreml_model, bits, mode
