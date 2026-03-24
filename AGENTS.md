@@ -12,6 +12,7 @@ Current built-in backends:
 - `litert`
 - `ncnn`
 - `onnx`
+- `rknn`
 - `tensorrt`
 - `torch-export`
 - `torchscript`
@@ -78,6 +79,17 @@ Runtime nuance:
   the explicit `--random-calibration` escape hatch (random noise, not recommended for production).
   `--mean`/`--std` override the timm data config for calibration image normalization (useful for
   fine-tuned models trained with custom normalization).
+- For `rknn`, exports via TorchScript or ONNX intermediate → RKNN conversion using rknn-toolkit2
+  (Linux x86_64/aarch64 only, Python 3.11-3.12). `--source` selects intermediate format:
+  `torchscript` (default, uses `torch.jit.trace` → `rknn.load_pytorch()`, no onnx dep) or `onnx`
+  (uses `torch.onnx.export(dynamo=False)` → `rknn.load_onnx()`, requires `onnx>=1.16,<1.19`).
+  `--target-platform` selects the Rockchip SoC (default rk3588). Modes are `fp32`, `fp16`, `int8`.
+  INT8 requires `--calibration-data <image-directory>` — tensor files and `--random-calibration` are
+  not supported (RKNN loads/preprocesses images internally). `--quant-algorithm` selects
+  normal/mmse/kl_divergence; `--quant-method` selects channel/layer. No dynamic batch support (RKNN
+  compiles to static NPU graphs). `--opset` (ONNX opset, capped at 19) and `--keep-onnx` only apply
+  to `--source onnx`. Normalization is handled by RKNN config by default (mean/std scaled to
+  [0,255]); `--normalize` embeds it in the graph instead, which may affect int8 calibration accuracy.
 - For `ncnn`, `--output` is a directory (not a file); pnnx intermediate files (`model.pt`, `model.pnnx.*`,
   `model_pnnx.py`) and `__pycache__` are removed automatically after export. `--fp16` defaults to `True`.
   Requires `pip install 'timmx[ncnn]'` (installs `pnnx` only; the `ncnn` Python package is not needed
@@ -95,8 +107,8 @@ Runtime nuance:
 - For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
-- For `onnx`, `torchscript`, `coreml`, `torch-export`, `ncnn`, `executorch`, `litert`, and
-  `tensorrt`, `--normalize` wraps the model with timm's mean/std normalization (via
+- For `onnx`, `torchscript`, `coreml`, `torch-export`, `ncnn`, `executorch`, `litert`, `rknn`,
+  and `tensorrt`, `--normalize` wraps the model with timm's mean/std normalization (via
   `PrePostWrapper` in `common.py`), so exported models accept unnormalized `[0, 1]` float input.
   `--softmax` adds a softmax output layer independently; combine it with `--normalize` when you want
   both embedded preprocessing and probability outputs, or use it alone if your runtime already feeds
@@ -134,8 +146,11 @@ uv build
 
 Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
 deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `ncnn`, `executorch`.
-TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
-directly with `pip install tensorrt`. The `executorch` and `litert` extras conflict on torch version
+TensorRT and RKNN cannot be resolved cross-platform so they are not extras — users install them directly
+with `pip install tensorrt` or `pip install rknn-toolkit2`. RKNN requires Linux (x86_64/aarch64) and
+Python 3.11-3.12; with `--source onnx` it also requires `onnx >= 1.16, < 1.19` (rknn-toolkit2 uses
+`onnx.mapping` which was removed in onnx 1.19) and `setuptools` (for `pkg_resources`); the default
+`--source torchscript` has no onnx dependency. The `executorch` and `litert` extras conflict on torch version
 requirements (`torch>=2.10.0` vs `torch<2.10.0`) and cannot be installed together — this is declared
 via `[tool.uv] conflicts` in `pyproject.toml`.
 

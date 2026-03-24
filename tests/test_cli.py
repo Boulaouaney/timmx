@@ -52,6 +52,7 @@ def test_export_help_lists_backends() -> None:
     assert "litert" in _plain(result.output)
     assert "ncnn" in _plain(result.output)
     assert "onnx" in _plain(result.output)
+    assert "rknn" in _plain(result.output)
     assert "tensorrt" in _plain(result.output)
     assert "torch-export" in _plain(result.output)
     assert "torchscript" in _plain(result.output)
@@ -153,6 +154,21 @@ def test_export_ncnn_help_shows_options() -> None:
     assert "--output" in _plain(result.output)
     assert "--fp16" in _plain(result.output)
     assert "--device" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
+    assert "--mean" in _plain(result.output)
+    assert "--std" in _plain(result.output)
+
+
+def test_export_rknn_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "rknn", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in _plain(result.output)
+    assert "--target-platform" in _plain(result.output)
+    assert "--mode" in _plain(result.output)
+    assert "--quant-algorithm" in _plain(result.output)
+    assert "calibration-da" in _plain(result.output)
+    assert "--keep-onnx" in _plain(result.output)
     assert "--normalize" in _plain(result.output)
     assert "--softmax" in _plain(result.output)
     assert "--mean" in _plain(result.output)
