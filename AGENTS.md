@@ -96,6 +96,10 @@ Runtime nuance:
   mlprogram uses `linear_quantize_weights()` (per-channel int8) and `palettize_weights()`
   (k-means int4, needs scikit-learn). `--half` is a no-op on mlprogram (already fp16).
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
+- Known test caveat: with every extra installed, the two `litert` static-int8 tests can fail in a
+  full in-process `pytest` run with `No module named 'litert_converter.mlir.dialects.quant'`
+  (litert-torch ships no Python `quant` dialect; b/362798610). They pass in isolation and the CLI
+  export works, since a real export is a fresh process.
 - For `litert`, `tensorrt` and `executorch` `--mode int8`, `--calibration-data` accepts either an
   image directory (timm transforms applied automatically, `--calibration-samples` limits count,
   default 128) or a torch-saved tensor `(N, C, H, W)`. Int8 requires `--calibration-data` or
