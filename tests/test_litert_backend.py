@@ -48,6 +48,7 @@ def _build_kwargs(
     calibration_steps: int | None = None,
     calibration_samples: int | None = None,
     random_calibration: bool = False,
+    per_channel: bool = True,
     verify: bool = True,
     normalize: bool = False,
     softmax: bool = False,
@@ -69,6 +70,7 @@ def _build_kwargs(
         "calibration_steps": calibration_steps,
         "calibration_samples": calibration_samples,
         "random_calibration": random_calibration,
+        "per_channel": per_channel,
         "nhwc_input": nhwc_input,
         "verify": verify,
         "normalize": normalize,
@@ -105,7 +107,7 @@ def test_export_litert_modes_include_expected_tensor_types(
     expected_dtype: type[np.generic],
 ) -> None:
     output_path = tmp_path / f"model_{mode}.tflite"
-    needs_random_cal = mode in {"dynamic-int8", "int8"}
+    needs_random_cal = mode == "int8"
     kwargs = _build_kwargs(output_path, mode=mode, random_calibration=needs_random_cal)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
@@ -156,12 +158,26 @@ def test_export_litert_rejects_calibration_args_for_fp32(
         command(**kwargs)
 
 
+def test_export_litert_rejects_calibration_args_for_dynamic_int8(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(
+        tmp_path / "dynamic_int8.tflite", mode="dynamic-int8", random_calibration=True
+    )
+    with pytest.raises(ConfigurationError, match="only valid with --mode int8"):
+        LiteRTBackend().create_command()(**kwargs)
+
+
+def test_export_litert_rejects_no_per_channel_outside_int8(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "dynamic_int8.tflite", mode="dynamic-int8", per_channel=False)
+    with pytest.raises(ConfigurationError, match="--no-per-channel"):
+        LiteRTBackend().create_command()(**kwargs)
+
+
 def test_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: Path) -> None:
     backend = LiteRTBackend()
     command = backend.create_command()
     with pytest.raises(
         ConfigurationError,
-        match="--mean/--std require --normalize unless used for --mode dynamic-int8 or --mode int8 calibration",
+        match="--mean/--std require --normalize unless used for --mode int8 calibration",
     ):
         command(
             **_build_kwargs(
@@ -198,7 +214,7 @@ def test_allows_mean_std_for_int8_calibration_without_wrapper_flags(
     )
     monkeypatch.setattr(
         "timmx.export.litert_backend._prepare_pt2e_quantized_module",
-        lambda model, example_input, *, calibration_batches, is_dynamic: (model, object()),
+        lambda model, example_input, *, calibration_batches, per_channel: (model, object()),
     )
     monkeypatch.setattr(
         "timmx.export.litert_backend._import_litert_torch",
@@ -250,7 +266,7 @@ def test_int8_wrapper_disables_image_normalization_for_calibration(
     )
     monkeypatch.setattr(
         "timmx.export.litert_backend._prepare_pt2e_quantized_module",
-        lambda model, example_input, *, calibration_batches, is_dynamic: (model, object()),
+        lambda model, example_input, *, calibration_batches, per_channel: (model, object()),
     )
     monkeypatch.setattr(
         "timmx.export.litert_backend._import_litert_torch",
@@ -300,7 +316,7 @@ def test_int8_softmax_only_keeps_image_normalization_for_calibration(
     )
     monkeypatch.setattr(
         "timmx.export.litert_backend._prepare_pt2e_quantized_module",
-        lambda model, example_input, *, calibration_batches, is_dynamic: (model, object()),
+        lambda model, example_input, *, calibration_batches, per_channel: (model, object()),
     )
     monkeypatch.setattr(
         "timmx.export.litert_backend._import_litert_torch",
@@ -399,6 +415,5 @@ def test_pt2e_quantized_module_is_in_eval_mode() -> None:
         model,
         example_input,
         calibration_batches=calibration_batches,
-        is_dynamic=False,
     )
     assert quantized.training is False

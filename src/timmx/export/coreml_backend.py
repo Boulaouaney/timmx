@@ -99,11 +99,13 @@ class CoreMLBackend(ExportBackend):
             ] = False,
             int8: Annotated[
                 bool,
-                typer.Option("--int8", help="Quantize weights to 8-bit."),
+                typer.Option("--int8", help="Quantize weights to 8-bit (linear, per-channel)."),
             ] = False,
             int4: Annotated[
                 bool,
-                typer.Option("--int4", help="Quantize weights to 4-bit (mlpackage only)."),
+                typer.Option(
+                    "--int4", help="Palettize weights to 4-bit (k-means, mlpackage only)."
+                ),
             ] = False,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
@@ -274,7 +276,7 @@ def _map_compute_precision(value: str, ct: object) -> object:
 
 def _quantize_weights(coreml_model: object, *, bits: int, is_mlprogram: bool, ct: object) -> object:
     if not is_mlprogram:
-        mode = "linear" if bits == 16 else "kmeans_lut"
+        mode = "linear" if bits == 16 else "linear_symmetric"
         console.print(f"[bold]Quantizing weights to {bits}-bit ({mode})...[/bold]")
         return ct.models.neural_network.quantization_utils.quantize_weights(
             coreml_model, bits, mode
@@ -288,13 +290,22 @@ def _quantize_weights(coreml_model: object, *, bits: int, is_mlprogram: bool, ct
         )
         return coreml_model
 
-    # mlprogram: k-means palettization for int8/int4
     import coremltools.optimize.coreml as cto
 
+    if bits == 8:
+        # mlprogram int8: per-channel symmetric linear quantization
+        op_config = cto.OpLinearQuantizerConfig(
+            mode="linear_symmetric", dtype="int8", granularity="per_channel", weight_threshold=512
+        )
+        console.print("[bold]Quantizing weights to 8-bit (linear symmetric, per-channel)...[/bold]")
+        return cto.linear_quantize_weights(
+            coreml_model, cto.OptimizationConfig(global_config=op_config)
+        )
+
+    # mlprogram int4: k-means palettization (4-bit LUT); needs scikit-learn
     op_config = cto.OpPalettizerConfig(mode="kmeans", nbits=bits, weight_threshold=512)
-    config = cto.OptimizationConfig(global_config=op_config)
     console.print(f"[bold]Palettizing weights to {bits}-bit (k-means)...[/bold]")
-    return cto.palettize_weights(coreml_model, config)
+    return cto.palettize_weights(coreml_model, cto.OptimizationConfig(global_config=op_config))
 
 
 def _import_coremltools() -> object:

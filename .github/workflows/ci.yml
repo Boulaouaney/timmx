@@ -17,16 +17,24 @@ jobs:
       - run: uvx ruff check .
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --group dev
+      # coremltools has no Python 3.14 or Windows wheels yet
+      - run: uv sync --group dev --extra onnx --extra ncnn ${{ (matrix.python-version != '3.14' && matrix.os != 'windows-latest') && '--extra coreml' || '' }}
       - run: uv run pytest
 
   build:

@@ -65,14 +65,21 @@ class LiteRTBackend(ExportBackend):
             input_size: InputSizeOpt = None,
             device: DeviceOpt = Device.cpu,
             mode: Annotated[
-                LiteRTMode, typer.Option(help="Export precision / quantization mode.")
+                LiteRTMode,
+                typer.Option(
+                    help=(
+                        "Export precision: fp32, fp16 (fp16 weights), dynamic-int8 "
+                        "(int8 weights, fp32 activations, no calibration) or int8 "
+                        "(full integer, needs calibration)."
+                    )
+                ),
             ] = LiteRTMode.fp32,
             calibration_data: Annotated[
                 Path | None,
                 typer.Option(
                     help=(
                         "Path to calibration data: an image directory or a "
-                        "torch-saved tensor (N, C, H, W). Required for int8 modes "
+                        "torch-saved tensor (N, C, H, W). Required for --mode int8 "
                         "unless --random-calibration is set."
                     )
                 ),
@@ -105,6 +112,13 @@ class LiteRTBackend(ExportBackend):
                     ),
                 ),
             ] = False,
+            per_channel: Annotated[
+                bool,
+                typer.Option(
+                    help="Use per-channel weight quantization for int8. "
+                    "Disable with --no-per-channel for per-tensor."
+                ),
+            ] = True,
             nhwc_input: Annotated[
                 bool,
                 typer.Option(help="Expose the first model input as NHWC instead of NCHW."),
@@ -117,18 +131,15 @@ class LiteRTBackend(ExportBackend):
             mean: MeanOpt = None,
             std: StdOpt = None,
         ) -> None:
-            int8_modes = {LiteRTMode.dynamic_int8, LiteRTMode.int8}
-
-            if mode in int8_modes and device != Device.cpu:
+            if mode == LiteRTMode.int8 and device != Device.cpu:
                 raise ConfigurationError(
-                    "LiteRT int8 modes currently require --device cpu for PT2E quantization."
+                    "LiteRT int8 mode currently requires --device cpu for PT2E quantization."
                 )
-            if mode not in int8_modes and (mean is not None or std is not None) and not normalize:
+            if mode != LiteRTMode.int8 and (mean is not None or std is not None) and not normalize:
                 raise ConfigurationError(
-                    "--mean/--std require --normalize unless used for --mode dynamic-int8 "
-                    "or --mode int8 calibration."
+                    "--mean/--std require --normalize unless used for --mode int8 calibration."
                 )
-            if mode not in int8_modes and (
+            if mode != LiteRTMode.int8 and (
                 calibration_data is not None
                 or calibration_steps is not None
                 or calibration_samples is not None
@@ -136,9 +147,10 @@ class LiteRTBackend(ExportBackend):
             ):
                 raise ConfigurationError(
                     "--calibration-data, --calibration-steps, --calibration-samples, "
-                    "and --random-calibration are only valid with "
-                    "--mode dynamic-int8 or --mode int8."
+                    "and --random-calibration are only valid with --mode int8."
                 )
+            if mode != LiteRTMode.int8 and not per_channel:
+                raise ConfigurationError("--no-per-channel is only valid with --mode int8.")
 
             litert_torch = _import_litert_torch()
 
@@ -160,16 +172,9 @@ class LiteRTBackend(ExportBackend):
 
             convert_module: torch.nn.Module = prep.model
             quant_config = None
-            converter_flags: dict[str, object] = {}
             example_input = prep.example_input
 
-            if mode == LiteRTMode.fp16:
-                tensorflow = _import_tensorflow()
-                converter_flags = {
-                    "optimizations": [tensorflow.lite.Optimize.DEFAULT],
-                    "target_spec": {"supported_types": [tensorflow.float16]},
-                }
-            elif mode in int8_modes:
+            if mode == LiteRTMode.int8:
                 calibration_batches = resolve_calibration_batches(
                     calibration_data=calibration_data,
                     calibration_steps=calibration_steps,
@@ -188,7 +193,7 @@ class LiteRTBackend(ExportBackend):
                     prep.model,
                     example_input,
                     calibration_batches=calibration_batches,
-                    is_dynamic=(mode == LiteRTMode.dynamic_int8),
+                    per_channel=per_channel,
                 )
 
             if nhwc_input:
@@ -198,10 +203,7 @@ class LiteRTBackend(ExportBackend):
 
             try:
                 edge_model = litert_torch.convert(
-                    convert_module,
-                    (example_input,),
-                    quant_config=quant_config,
-                    _ai_edge_converter_flags=converter_flags,
+                    convert_module, (example_input,), quant_config=quant_config
                 )
             except Exception as exc:
                 raise ExportError(f"LiteRT conversion failed: {exc}") from exc
@@ -210,6 +212,9 @@ class LiteRTBackend(ExportBackend):
                 edge_model.export(str(prep.output_path))
             except Exception as exc:
                 raise ExportError(f"Failed to save LiteRT model: {exc}") from exc
+
+            if mode in (LiteRTMode.fp16, LiteRTMode.dynamic_int8):
+                _quantize_weights(prep.output_path, mode)
 
             if verify:
                 _verify_tflite_model(prep.output_path)
@@ -222,8 +227,9 @@ def _prepare_pt2e_quantized_module(
     example_input: torch.Tensor,
     *,
     calibration_batches: list[torch.Tensor],
-    is_dynamic: bool,
+    per_channel: bool = True,
 ) -> tuple[torch.nn.Module, object]:
+    """Static int8 PT2E quantization (int8 weights and activations) with calibration."""
     from litert_torch.quantize import pt2e_quantizer, quant_config
     from torchao.quantization.pt2e import quantize_pt2e
 
@@ -232,8 +238,8 @@ def _prepare_pt2e_quantized_module(
 
         quantizer = pt2e_quantizer.PT2EQuantizer().set_global(
             pt2e_quantizer.get_symmetric_quantization_config(
-                is_per_channel=False,
-                is_dynamic=is_dynamic,
+                is_per_channel=per_channel,
+                is_dynamic=False,
             )
         )
         prepared_module = quantize_pt2e.prepare_pt2e(exported_module, quantizer)
@@ -246,10 +252,47 @@ def _prepare_pt2e_quantized_module(
         # Suppress LiteRT training-mode warning; graph already has eval semantics.
         quantized_module.training = False
     except Exception as exc:
-        mode_label = "dynamic-int8" if is_dynamic else "int8"
-        raise ExportError(f"Failed to prepare {mode_label} PT2E quantized model: {exc}") from exc
+        raise ExportError(f"Failed to prepare int8 PT2E quantized model: {exc}") from exc
 
     return quantized_module, quant_config.QuantConfig(pt2e_quantizer=quantizer)
+
+
+def _quantize_weights(output_path: Path, mode: LiteRTMode) -> None:
+    """Post-training weight quantization of a saved .tflite with ai-edge-quantizer.
+
+    fp16 casts weights to float16 (dequantized at runtime); dynamic-int8 stores int8
+    weights and quantizes activations on the fly. Neither needs calibration data.
+    """
+    try:
+        from ai_edge_quantizer import qtyping, quantizer, recipe
+        from ai_edge_quantizer.algorithm_manager import AlgorithmName
+    except ImportError as exc:
+        raise ExportError(
+            "ai-edge-quantizer is required for LiteRT fp16/dynamic-int8 export. "
+            "Install with: pip install 'timmx[litert]'"
+        ) from exc
+
+    try:
+        qt = quantizer.Quantizer(str(output_path))
+        if mode == LiteRTMode.fp16:
+            qt.update_quantization_recipe(
+                regex=".*",
+                operation_name=qtyping.TFLOperationName.ALL_SUPPORTED,
+                op_config=qtyping.OpQuantizationConfig(
+                    weight_tensor_config=qtyping.TensorQuantizationConfig(
+                        num_bits=16, dtype=qtyping.TensorDataType.FLOAT
+                    ),
+                    compute_precision=qtyping.ComputePrecision.FLOAT,
+                    explicit_dequantize=True,
+                ),
+                algorithm_key=AlgorithmName.FLOAT_CASTING,
+            )
+        else:
+            qt.load_quantization_recipe(recipe.dynamic_wi8_afp32())
+        result = qt.quantize(enable_progress_report=False)
+        output_path.write_bytes(result.quantized_model)
+    except Exception as exc:
+        raise ExportError(f"LiteRT {mode} weight quantization failed: {exc}") from exc
 
 
 def _validate_nhwc_input_compatibility(example_input: torch.Tensor) -> None:
@@ -288,14 +331,3 @@ def _import_litert_torch() -> object:
             "litert-torch is required for LiteRT export. Install with: pip install 'timmx[litert]'"
         ) from exc
     return litert_torch
-
-
-def _import_tensorflow() -> object:
-    try:
-        import tensorflow
-    except ImportError as exc:
-        raise ExportError(
-            "TensorFlow is required for LiteRT fp16 conversion flags. "
-            "Install with: pip install tensorflow"
-        ) from exc
-    return tensorflow

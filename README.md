@@ -18,7 +18,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 
 ## Requirements
 
-- Python `>=3.11`
+- Python `>=3.11,<3.15`
 - [`uv`](https://docs.astral.sh/uv/)
 
 ## Installation
@@ -46,9 +46,9 @@ TensorRT requires CUDA and must be installed separately:
 pip install tensorrt  # Linux/Windows with CUDA only
 ```
 
-> **Note:** The `executorch` and `litert` extras have conflicting torch version
-> requirements (`executorch` needs `torch>=2.10.0`, `litert` needs `torch<2.10.0`)
-> and cannot be installed in the same environment.
+> **Note:** `coremltools` has no Python 3.14 wheels yet, so the `coreml` extra needs
+> Python `<=3.13`. `litert-torch` currently requires `torch<2.14`, so the `litert`
+> extra pins torch accordingly.
 
 Check which backends are available:
 
@@ -153,7 +153,7 @@ uv run timmx export coreml resnet18 \
 Weight quantization (post-conversion, applied to model weights):
 
 ```bash
-# 8-bit k-means quantization (mlpackage)
+# 8-bit linear quantization (mlpackage)
 uv run timmx export coreml resnet18 \
   --pretrained \
   --convert-to mlprogram \
@@ -186,7 +186,8 @@ uv run timmx export coreml resnet18 \
 
 ### LiteRT / TFLite
 
-Supported modes: `fp32`, `fp16`, `dynamic-int8`, `int8`.
+Supported modes: `fp32`, `fp16` (fp16 weights), `dynamic-int8` (int8 weights, fp32
+activations) and `int8` (full integer). Only `int8` needs calibration data.
 
 ```bash
 uv run timmx export litert resnet18 \
@@ -194,7 +195,17 @@ uv run timmx export litert resnet18 \
   --output ./artifacts/resnet18_fp16.tflite
 ```
 
-INT8 with calibration data (point to an image directory — timm transforms are applied automatically):
+Dynamic-range INT8 (no calibration needed):
+
+```bash
+uv run timmx export litert resnet18 \
+  --mode dynamic-int8 \
+  --output ./artifacts/resnet18_dynamic_int8.tflite
+```
+
+Full INT8 with calibration data (point to an image directory — timm transforms are applied
+automatically). Weights are quantized per-channel by default; pass `--no-per-channel` for
+per-tensor:
 
 ```bash
 uv run timmx export litert resnet18 \

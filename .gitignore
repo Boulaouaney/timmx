@@ -28,3 +28,5 @@ uv.lock
 
 *.engine
 *.cache
+# local agent tooling
+.fast-agent/

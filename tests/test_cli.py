@@ -104,8 +104,9 @@ def test_export_litert_help_shows_options() -> None:
     assert result.exit_code == 0
     assert "--output" in _plain(result.output)
     assert "--mode" in _plain(result.output)
-    assert "calibration-da" in _plain(result.output)
+    assert "--calibration-d" in _plain(result.output)
     assert "--nhwc-input" in _plain(result.output)
+    assert "--per-channel" in _plain(result.output)
     assert "--normalize" in _plain(result.output)
     assert "--softmax" in _plain(result.output)
     assert "--mean" in _plain(result.output)

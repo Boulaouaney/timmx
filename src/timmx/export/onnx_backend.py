@@ -104,12 +104,10 @@ class OnnxBackend(ExportBackend):
                 "input_names": ["input"],
                 "output_names": ["output"],
                 "dynamo": True,
-                "fallback": True,
                 "external_data": external_data,
             }
             if dynamic_batch:
                 export_kwargs["dynamic_shapes"] = ({0: torch.export.Dim("batch")},)
-                export_kwargs["dynamic_axes"] = {"input": {0: "batch"}, "output": {0: "batch"}}
 
             try:
                 torch.onnx.export(prep.model, (prep.example_input,), **export_kwargs)
