@@ -14,6 +14,7 @@ keywords = [
   "litert",
   "model-export",
   "onnx",
+  "openvino",
   "pytorch",
   "tensorrt",
   "timm"
@@ -47,6 +48,7 @@ executorch = ["executorch>=1.4"]
 litert = ["litert-torch>=0.9"]
 ncnn = ["pnnx"]
 onnx = ["onnx>=1.16", "onnxscript", "onnxslim"]
+openvino = ["openvino>=2025.0"]
 
 [project.scripts]
 timmx = "timmx.cli:main"
