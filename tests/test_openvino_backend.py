@@ -51,10 +51,11 @@ def test_rejects_non_xml_output(tmp_path: Path) -> None:
         OpenVINOBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.bin"))
 
 
-def test_dynamic_batch_marks_batch_dimension_dynamic(tmp_path: Path) -> None:
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_dynamic_batch_marks_batch_dimension_dynamic(tmp_path: Path, batch_size: int) -> None:
     output_path = tmp_path / "resnet18_dynamic.xml"
     OpenVINOBackend().create_command()(
-        **_build_kwargs(output_path, batch_size=2, dynamic_batch=True)
+        **_build_kwargs(output_path, batch_size=batch_size, dynamic_batch=True)
     )
 
     model = ov.Core().read_model(str(output_path))
