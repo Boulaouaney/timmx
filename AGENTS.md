@@ -12,6 +12,7 @@ Current built-in backends:
 - `litert`
 - `ncnn`
 - `onnx`
+- `openvino`
 - `tensorrt`
 - `torch-export`
 - `torchscript`
@@ -19,7 +20,7 @@ Current built-in backends:
 ## Development Commands
 
 ```bash
-uv sync --extra onnx --extra coreml --extra ncnn --group dev  # install extras + pytest
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --group dev  # install extras + pytest
 uv run pytest                               # all tests
 uv run pytest tests/test_cli.py::test_name  # one test
 uvx ruff format . && uvx ruff check .       # format + lint (import sorting included)
@@ -82,6 +83,10 @@ Runtime nuance:
   both sources (sets `max=` on `torch.export.Dim` for torch-export, `ct.RangeDim.upper_bound`
   for trace).
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
+- For `openvino`, `--output` must be an `.xml` path (the `.bin` is written alongside); `--fp16`
+  (default `True`) compresses weights via `ov.save_model(compress_to_fp16=...)`; `--dynamic-batch`
+  sets the batch dim to `-1`; verification compiles the IR on the OpenVINO `CPU` device and runs a
+  forward pass.
 - For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`. `fp16` and
   `dynamic-int8` are post-training weight quantization of the saved `.tflite` via
   `ai-edge-quantizer` (no calibration); `int8` is static PT2E quantization (per-channel by
@@ -114,8 +119,8 @@ Runtime nuance:
 - For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
-- For `onnx`, `torchscript`, `coreml`, `torch-export`, `ncnn`, `executorch`, `litert`, and
-  `tensorrt`, `--normalize` wraps the model with timm's mean/std normalization (via
+- For `onnx`, `openvino`, `torchscript`, `coreml`, `torch-export`, `ncnn`, `executorch`, `litert`,
+  and `tensorrt`, `--normalize` wraps the model with timm's mean/std normalization (via
   `PrePostWrapper` in `common.py`), so exported models accept unnormalized `[0, 1]` float input.
   `--softmax` adds a softmax output layer independently; combine it with `--normalize` when you want
   both embedded preprocessing and probability outputs, or use it alone if your runtime already feeds
@@ -142,7 +147,7 @@ Runtime nuance:
 Run these from repo root:
 
 ```bash
-uv sync --extra onnx --extra coreml --extra ncnn --group dev
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --group dev
 uvx ruff format .
 uvx ruff check .
 uv run pytest
@@ -152,7 +157,8 @@ uv build
 ## Dependencies
 
 Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
-deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `ncnn`, `executorch`.
+deps are optional extras in `[project.optional-dependencies]`: `onnx`, `openvino`, `coreml`, `litert`,
+`ncnn`, `executorch`.
 TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
 directly with `pip install tensorrt`. Core requires `torch>=2.9` and Python `>=3.11,<3.15`.
 `litert-torch` requires `torch<2.14`, so the `litert` extra pins torch; `coremltools` has no
