@@ -300,14 +300,20 @@ def test_export_coreml_half_mlprogram_is_noop(tmp_path: Path) -> None:
     ct.models.MLModel(str(output_path), skip_model_load=True)
 
 
+def _mil_op_types(model_path: Path) -> set[str]:
+    spec = ct.models.MLModel(str(model_path), skip_model_load=True).get_spec()
+    main = spec.mlProgram.functions["main"]
+    return {op.type for block in main.block_specializations.values() for op in block.operations}
+
+
 def test_export_coreml_int8_mlprogram(tmp_path: Path) -> None:
-    """--int8 with mlprogram palettizes weights to 8-bit."""
+    """--int8 with mlprogram applies linear int8 weight quantization."""
     output_path = tmp_path / "resnet18_int8.mlpackage"
     kwargs = _build_kwargs(output_path, compute_precision="float16", int8=True)
 
     CoreMLBackend().create_command()(**kwargs)
     assert output_path.exists()
-    ct.models.MLModel(str(output_path), skip_model_load=True)
+    assert "constexpr_affine_dequantize" in _mil_op_types(output_path)
 
 
 def test_export_coreml_int4_mlprogram(tmp_path: Path) -> None:
@@ -317,4 +323,4 @@ def test_export_coreml_int4_mlprogram(tmp_path: Path) -> None:
 
     CoreMLBackend().create_command()(**kwargs)
     assert output_path.exists()
-    ct.models.MLModel(str(output_path), skip_model_load=True)
+    assert "constexpr_lut_to_dense" in _mil_op_types(output_path)

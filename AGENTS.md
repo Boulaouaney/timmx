@@ -16,6 +16,16 @@ Current built-in backends:
 - `torch-export`
 - `torchscript`
 
+## Development Commands
+
+```bash
+uv sync --extra onnx --extra coreml --extra ncnn --group dev  # install extras + pytest
+uv run pytest                               # all tests
+uv run pytest tests/test_cli.py::test_name  # one test
+uvx ruff format . && uvx ruff check .       # format + lint (import sorting included)
+uv build
+```
+
 ## Non-Negotiable Tooling Rules
 
 - Use `uv` for dependency management, execution, and builds.
@@ -63,6 +73,8 @@ Runtime nuance:
   normalization/calibration helpers average RGB mean/std values down to a single grayscale value.
 - For `onnx`, `--slim` (default `True`) runs onnxslim after export for graph optimization (constant
   folding, dead-code elimination, operator fusion); disable with `--no-slim`.
+- `torch.onnx.export` is always called with `dynamo=True`; torch `>=2.11` removed the `fallback`
+  kwarg, so never pass it.
 - For `coreml`, `--source` selects model capture: `trace` (default, `torch.jit.trace`) or
   `torch-export` (beta, `torch.export.export()` → `run_decompositions({})` → `ct.convert()`).
   With `torch-export`, `ct.convert()` auto-infers shapes from the `ExportedProgram` (no `inputs=`
@@ -70,9 +82,16 @@ Runtime nuance:
   both sources (sets `max=` on `torch.export.Dim` for torch-export, `ct.RangeDim.upper_bound`
   for trace).
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
-- For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`.
+- For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`. `fp16` and
+  `dynamic-int8` are post-training weight quantization of the saved `.tflite` via
+  `ai-edge-quantizer` (no calibration); `int8` is static PT2E quantization (per-channel by
+  default, `--no-per-channel` for per-tensor) and needs calibration data.
+- For `coreml`, `--half`/`--int8`/`--int4` are mutually exclusive weight quantization flags.
+  neuralnetwork uses `quantize_weights()` (`linear` for fp16, `linear_symmetric` for int8);
+  mlprogram uses `linear_quantize_weights()` (per-channel int8) and `palettize_weights()`
+  (k-means int4, needs scikit-learn). `--half` is a no-op on mlprogram (already fp16).
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
-- For `litert` (and `tensorrt`, `executorch`) int8 modes, `--calibration-data` accepts either an
+- For `litert`, `tensorrt` and `executorch` `--mode int8`, `--calibration-data` accepts either an
   image directory (timm transforms applied automatically, `--calibration-samples` limits count,
   default 128) or a torch-saved tensor `(N, C, H, W)`. Int8 requires `--calibration-data` or
   the explicit `--random-calibration` escape hatch (random noise, not recommended for production).
@@ -135,9 +154,9 @@ uv build
 Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
 deps are optional extras in `[project.optional-dependencies]`: `onnx`, `coreml`, `litert`, `ncnn`, `executorch`.
 TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
-directly with `pip install tensorrt`. The `executorch` and `litert` extras conflict on torch version
-requirements (`torch>=2.10.0` vs `torch<2.10.0`) and cannot be installed together — this is declared
-via `[tool.uv] conflicts` in `pyproject.toml`.
+directly with `pip install tensorrt`. Core requires `torch>=2.9` and Python `>=3.11,<3.15`.
+`litert-torch` requires `torch<2.14`, so the `litert` extra pins torch; `coremltools` has no
+Python 3.14 wheels yet, so the `coreml` extra needs Python `<=3.13`.
 
 ## Scope Discipline
 

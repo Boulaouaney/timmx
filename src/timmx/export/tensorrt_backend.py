@@ -232,7 +232,6 @@ class TensorRTBackend(ExportBackend):
                 "input_names": ["input"],
                 "output_names": ["output"],
                 "dynamo": True,
-                "fallback": True,
                 "external_data": False,
             }
             if dynamic_batch:

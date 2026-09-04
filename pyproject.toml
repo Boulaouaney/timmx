@@ -3,7 +3,7 @@ name = "timmx"
 version = "0.4.4"
 description = "Extensible CLI and Python package for exporting timm models."
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.15"
 license = "Apache-2.0"
 authors = [{ name = "Youssef Boulaouane", email = "y.boulaouane11@gmail.com" }]
 keywords = [
@@ -29,6 +29,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
@@ -36,14 +37,14 @@ classifiers = [
 dependencies = [
   "rich",
   "timm",
-  "torch>=2.5.0,<2.11.0",
+  "torch>=2.9",
   "typer",
 ]
 
 [project.optional-dependencies]
 coreml = ["coremltools>=9.0", "scikit-learn"]
-executorch = ["executorch>=1.1.0"]
-litert = ["litert-torch>=0.8.0"]
+executorch = ["executorch>=1.4"]
+litert = ["litert-torch>=0.9"]
 ncnn = ["pnnx"]
 onnx = ["onnx>=1.16", "onnxscript", "onnxslim"]
 
@@ -61,20 +62,13 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.10.0,<0.12.0"]
+requires = ["uv_build>=0.10.0,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "timmx"
 module-root = "src"
 
-[tool.uv]
-conflicts = [
-  [
-    { extra = "executorch" },
-    { extra = "litert" },
-  ],
-]
 
 [tool.ruff]
 target-version = "py311"
