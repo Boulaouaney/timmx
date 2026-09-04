@@ -8,6 +8,7 @@ from timmx.export.executorch_backend import ExecuTorchBackend
 from timmx.export.litert_backend import LiteRTBackend
 from timmx.export.ncnn_backend import NcnnBackend
 from timmx.export.onnx_backend import OnnxBackend
+from timmx.export.openvino_backend import OpenVINOBackend
 from timmx.export.registry import BackendRegistry, create_builtin_registry
 from timmx.export.tensorrt_backend import TensorRTBackend
 from timmx.export.torch_export_backend import TorchExportBackend
@@ -22,6 +23,7 @@ def test_builtin_registry_contains_all_backends() -> None:
         "litert",
         "ncnn",
         "onnx",
+        "openvino",
         "tensorrt",
         "torch-export",
         "torchscript",
@@ -31,6 +33,7 @@ def test_builtin_registry_contains_all_backends() -> None:
     assert isinstance(registry.get("litert"), LiteRTBackend)
     assert isinstance(registry.get("ncnn"), NcnnBackend)
     assert isinstance(registry.get("onnx"), OnnxBackend)
+    assert isinstance(registry.get("openvino"), OpenVINOBackend)
     assert isinstance(registry.get("tensorrt"), TensorRTBackend)
     assert isinstance(registry.get("torch-export"), TorchExportBackend)
     assert isinstance(registry.get("torchscript"), TorchScriptBackend)

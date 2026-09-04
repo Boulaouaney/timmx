@@ -8,6 +8,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | Format | Command | Output |
 |--------|---------|--------|
 | ONNX | `timmx export onnx` | `.onnx` |
+| OpenVINO | `timmx export openvino` | `.xml` + `.bin` |
 | Core ML | `timmx export coreml` | `.mlpackage` / `.mlmodel` |
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
 | ncnn | `timmx export ncnn` | directory (`.param` + `.bin`) |
@@ -33,6 +34,7 @@ Install with specific backend extras:
 
 ```bash
 pip install 'timmx[onnx]'           # ONNX export
+pip install 'timmx[openvino]'       # OpenVINO IR export
 pip install 'timmx[coreml]'         # Core ML export
 pip install 'timmx[litert]'         # LiteRT/TFLite export
 pip install 'timmx[ncnn]'           # ncnn export (via pnnx)
@@ -59,7 +61,7 @@ timmx doctor
 ## Quick Start
 
 ```bash
-uv sync --extra onnx --extra coreml --extra ncnn --group dev
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --group dev
 uv run timmx doctor
 uv run timmx --help
 ```
@@ -117,6 +119,26 @@ Exported models are automatically optimized with [onnxslim](https://github.com/i
 
 ```bash
 uv run timmx export onnx resnet18 --pretrained --no-slim --output ./artifacts/resnet18.onnx
+```
+
+### OpenVINO
+
+Writes an OpenVINO IR pair (`.xml` + `.bin`); weights are compressed to fp16 by default.
+
+```bash
+uv run timmx export openvino resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18.xml
+```
+
+Dynamic batch with fp32 weights:
+
+```bash
+uv run timmx export openvino resnet18 \
+  --pretrained \
+  --dynamic-batch \
+  --no-fp16 \
+  --output ./artifacts/resnet18_dynamic.xml
 ```
 
 ### Core ML
@@ -470,18 +492,18 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [x] TensorRT
 - [x] TorchScript
 - [x] ExecuTorch (XNNPack + CoreML delegates)
-- [ ] OpenVINO
+- [x] OpenVINO
+- [ ] Core AI (Apple's Core ML successor, via [coreai-torch](https://pypi.org/project/coreai-torch/))
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
 - [ ] TFLite Edge TPU
-- [ ] RKNN
 - [ ] MNN
 - [ ] PaddlePaddle
 
 ## Development
 
 ```bash
-uv sync --extra onnx --extra coreml --extra ncnn --group dev  # install extras + pytest
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --group dev  # install extras + pytest
 uvx ruff format .                                              # format
 uvx ruff check .                                               # lint
 uv run pytest                                                  # test

@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       # coremltools has no Python 3.14 or Windows wheels yet
-      - run: uv sync --group dev --extra onnx --extra ncnn ${{ (matrix.python-version != '3.14' && matrix.os != 'windows-latest') && '--extra coreml' || '' }}
+      - run: uv sync --group dev --extra onnx --extra openvino --extra ncnn ${{ (matrix.python-version != '3.14' && matrix.os != 'windows-latest') && '--extra coreml' || '' }}
       - run: uv run pytest
 
   build:

@@ -52,6 +52,7 @@ def test_export_help_lists_backends() -> None:
     assert "litert" in _plain(result.output)
     assert "ncnn" in _plain(result.output)
     assert "onnx" in _plain(result.output)
+    assert "openvino" in _plain(result.output)
     assert "tensorrt" in _plain(result.output)
     assert "torch-export" in _plain(result.output)
     assert "torchscript" in _plain(result.output)
@@ -80,6 +81,17 @@ def test_export_onnx_help_shows_options() -> None:
     assert "--opset" in _plain(result.output)
     assert "--dynamic-batch" in _plain(result.output)
     assert "--check" in _plain(result.output)
+
+
+def test_export_openvino_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "openvino", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in _plain(result.output)
+    assert "--dynamic-batch" in _plain(result.output)
+    assert "--fp16" in _plain(result.output)
+    assert "--verify" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
 
 
 def test_export_coreml_help_shows_options() -> None:

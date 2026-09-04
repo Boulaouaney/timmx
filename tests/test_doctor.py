@@ -10,6 +10,7 @@ BACKENDS = [
     "litert",
     "ncnn",
     "onnx",
+    "openvino",
     "tensorrt",
     "torch-export",
     "torchscript",
