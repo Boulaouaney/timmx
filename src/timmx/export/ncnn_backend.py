@@ -98,18 +98,20 @@ class NcnnBackend(ExportBackend):
             ncnnbin = output_dir / "model.ncnn.bin"
             ncnnpy = output_dir / "model_ncnn.py"
 
+            # pnnx embeds these paths in the Python it generates, so use forward slashes:
+            # backslash sequences like C:\Users are invalid string escapes on Windows.
             try:
                 pnnx.export(
                     prep.model,
                     inputs=prep.example_input,
-                    ptpath=str(ptpath),
-                    pnnxparam=str(pnnxparam),
-                    pnnxbin=str(pnnxbin),
-                    pnnxpy=str(pnnxpy),
-                    pnnxonnx=str(pnnxonnx),
-                    ncnnparam=str(ncnnparam),
-                    ncnnbin=str(ncnnbin),
-                    ncnnpy=str(ncnnpy),
+                    ptpath=ptpath.as_posix(),
+                    pnnxparam=pnnxparam.as_posix(),
+                    pnnxbin=pnnxbin.as_posix(),
+                    pnnxpy=pnnxpy.as_posix(),
+                    pnnxonnx=pnnxonnx.as_posix(),
+                    ncnnparam=ncnnparam.as_posix(),
+                    ncnnbin=ncnnbin.as_posix(),
+                    ncnnpy=ncnnpy.as_posix(),
                     fp16=fp16,
                     device=str(device),
                 )

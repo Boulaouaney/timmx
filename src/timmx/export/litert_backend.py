@@ -149,6 +149,8 @@ class LiteRTBackend(ExportBackend):
                     "--calibration-data, --calibration-steps, --calibration-samples, "
                     "and --random-calibration are only valid with --mode int8."
                 )
+            if mode != LiteRTMode.int8 and not per_channel:
+                raise ConfigurationError("--no-per-channel is only valid with --mode int8.")
 
             litert_torch = _import_litert_torch()
 
@@ -261,8 +263,14 @@ def _quantize_weights(output_path: Path, mode: LiteRTMode) -> None:
     fp16 casts weights to float16 (dequantized at runtime); dynamic-int8 stores int8
     weights and quantizes activations on the fly. Neither needs calibration data.
     """
-    from ai_edge_quantizer import qtyping, quantizer, recipe
-    from ai_edge_quantizer.algorithm_manager import AlgorithmName
+    try:
+        from ai_edge_quantizer import qtyping, quantizer, recipe
+        from ai_edge_quantizer.algorithm_manager import AlgorithmName
+    except ImportError as exc:
+        raise ExportError(
+            "ai-edge-quantizer is required for LiteRT fp16/dynamic-int8 export. "
+            "Install with: pip install 'timmx[litert]'"
+        ) from exc
 
     try:
         qt = quantizer.Quantizer(str(output_path))

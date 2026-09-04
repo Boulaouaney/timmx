@@ -166,6 +166,12 @@ def test_export_litert_rejects_calibration_args_for_dynamic_int8(tmp_path: Path)
         LiteRTBackend().create_command()(**kwargs)
 
 
+def test_export_litert_rejects_no_per_channel_outside_int8(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "dynamic_int8.tflite", mode="dynamic-int8", per_channel=False)
+    with pytest.raises(ConfigurationError, match="--no-per-channel"):
+        LiteRTBackend().create_command()(**kwargs)
+
+
 def test_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: Path) -> None:
     backend = LiteRTBackend()
     command = backend.create_command()
