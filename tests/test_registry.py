@@ -18,6 +18,7 @@ from timmx.export.torchscript_backend import TorchScriptBackend
 def test_builtin_registry_contains_all_backends() -> None:
     registry = create_builtin_registry()
     assert registry.names() == [
+        "coreai",
         "coreml",
         "executorch",
         "litert",

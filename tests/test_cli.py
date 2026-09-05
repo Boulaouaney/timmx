@@ -47,6 +47,7 @@ def test_root_help_mentions_list() -> None:
 def test_export_help_lists_backends() -> None:
     result = runner.invoke(app, ["export", "--help"])
     assert result.exit_code == 0
+    assert "coreai" in _plain(result.output)
     assert "coreml" in _plain(result.output)
     assert "executorch" in _plain(result.output)
     assert "litert" in _plain(result.output)
@@ -56,6 +57,16 @@ def test_export_help_lists_backends() -> None:
     assert "tensorrt" in _plain(result.output)
     assert "torch-export" in _plain(result.output)
     assert "torchscript" in _plain(result.output)
+
+
+def test_export_coreai_help_shows_options() -> None:
+    result = runner.invoke(app, ["export", "coreai", "--help"])
+    assert result.exit_code == 0
+    assert "--output" in _plain(result.output)
+    assert "--dynamic-batch" in _plain(result.output)
+    assert "--verify" in _plain(result.output)
+    assert "--normalize" in _plain(result.output)
+    assert "--softmax" in _plain(result.output)
 
 
 def test_export_executorch_help_shows_options() -> None:

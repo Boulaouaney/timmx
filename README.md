@@ -10,6 +10,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 | ONNX | `timmx export onnx` | `.onnx` |
 | OpenVINO | `timmx export openvino` | `.xml` + `.bin` |
 | Core ML | `timmx export coreml` | `.mlpackage` / `.mlmodel` |
+| Core AI | `timmx export coreai` | `.aimodel` |
 | LiteRT / TFLite | `timmx export litert` | `.tflite` |
 | ncnn | `timmx export ncnn` | directory (`.param` + `.bin`) |
 | TensorRT | `timmx export tensorrt` | `.engine` |
@@ -36,6 +37,7 @@ Install with specific backend extras:
 pip install 'timmx[onnx]'           # ONNX export (onnxruntime included for verification)
 pip install 'timmx[openvino]'       # OpenVINO IR export
 pip install 'timmx[coreml]'         # Core ML export
+pip install 'timmx[coreai]'         # Core AI export (Apple; runtime is macOS-only)
 pip install 'timmx[litert]'         # LiteRT/TFLite export
 pip install 'timmx[ncnn]'           # ncnn export (via pnnx; ncnn runtime for verification)
 pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML delegates)
@@ -50,7 +52,9 @@ pip install tensorrt  # Linux/Windows with CUDA only
 
 > **Note:** `coremltools` has no Python 3.14 wheels yet, so the `coreml` extra needs
 > Python `<=3.13`. `litert-torch` currently requires `torch<2.14`, so the `litert`
-> extra pins torch accordingly.
+> extra pins torch accordingly. `coreai-core` ships wheels only for Python `<=3.13`
+> on macOS 26+ (arm64) and manylinux x86_64, and `coreai-torch` is validated against
+> `torch<=2.13`.
 
 Check which backends are available:
 
@@ -61,7 +65,7 @@ timmx doctor
 ## Quick Start
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --group dev
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --group dev
 uv run timmx doctor
 uv run timmx --help
 ```
@@ -149,6 +153,33 @@ uv run timmx export openvino resnet18 \
   --no-fp16 \
   --output ./artifacts/resnet18_dynamic.xml
 ```
+
+### Core AI
+
+Writes a Core AI asset — a `.aimodel` **directory** holding the Core AI IR bytecode, for Apple's
+Core AI inference stack. Conversion goes through `torch.export`, so it handles CNNs and
+transformers alike, and the graph's input and output are named `input` and `output`.
+
+```bash
+uv run timmx export coreai resnet18 \
+  --pretrained \
+  --output ./artifacts/resnet18.aimodel
+```
+
+Dynamic batch (needs `--batch-size >= 2` for symbolic shape capture, then accepts any batch size
+at runtime):
+
+```bash
+uv run timmx export coreai resnet18 \
+  --pretrained \
+  --batch-size 2 \
+  --dynamic-batch \
+  --output ./artifacts/resnet18_dynamic.aimodel
+```
+
+> **Note:** conversion works on macOS and Linux, but the Core AI runtime only executes on Apple
+> platforms. On Linux `--verify` therefore only checks that the asset reads back, and cannot
+> compare outputs against PyTorch.
 
 ### Core ML
 
@@ -538,7 +569,7 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [x] TorchScript
 - [x] ExecuTorch (XNNPack + CoreML delegates)
 - [x] OpenVINO
-- [ ] Core AI (Apple's Core ML successor, via [coreai-torch](https://pypi.org/project/coreai-torch/))
+- [x] Core AI (via [coreai-torch](https://pypi.org/project/coreai-torch/))
 - [ ] TensorFlow (SavedModel / .pb)
 - [ ] TensorFlow.js
 - [ ] TFLite Edge TPU
@@ -548,7 +579,7 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 ## Development
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --group dev  # install extras + pytest
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --group dev  # install extras + pytest
 uvx ruff format .                                              # format
 uvx ruff check .                                               # lint
 uv run pytest                                                  # test
