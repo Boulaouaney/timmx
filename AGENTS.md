@@ -76,12 +76,22 @@ Runtime nuance:
   folding, dead-code elimination, operator fusion); disable with `--no-slim`.
 - `torch.onnx.export` is always called with `dynamo=True`; torch `>=2.11` removed the `fallback`
   kwarg, so never pass it.
-- For `coreml`, `--source` selects model capture: `trace` (default, `torch.jit.trace`) or
-  `torch-export` (beta, `torch.export.export()` → `run_decompositions({})` → `ct.convert()`).
-  With `torch-export`, `ct.convert()` auto-infers shapes from the `ExportedProgram` (no `inputs=`
-  needed), and `--dynamic-batch` requires `--batch-size >= 2`. `--batch-upper-bound` applies to
-  both sources (sets `max=` on `torch.export.Dim` for torch-export, `ct.RangeDim.upper_bound`
-  for trace).
+- Every backend verifies its artifact by default (`--verify/--no-verify`): it reloads the written
+  file, runs it on the sample input (int8 exports: the first calibration batch) and calls
+  `verify_outputs()` in `common.py`, which prints cosine similarity / max abs diff versus PyTorch
+  and raises `ExportError` below `VERIFY_MIN_COSINE` (0.9), keeping the file. `onnx` verifies with
+  `onnxruntime` (in the `onnx` extra), `ncnn` with the `ncnn` package (in the `ncnn` extra),
+  `executorch` with `executorch.runtime` (CoreML delegate: macOS only, skipped elsewhere),
+  `coreml` by prediction on macOS (metadata-only elsewhere), `litert` with the LiteRT
+  interpreter (quantizing int8 inputs/outputs with the model's scale/zero point).
+- For `coreml`, `--source` selects model capture: `torch-export` (default,
+  `torch.export.export()` → `run_decompositions({})` → `ct.convert()`) or `trace`
+  (`torch.jit.trace`). Trace fails on ViT/DeiT/Swin with coremltools 9 + torch 2.13, torch-export
+  fails on Swin; conversion errors hint at the other source. `_name_io()` renames the single
+  input/output to `input`/`output` for both sources. With `torch-export`, `ct.convert()`
+  auto-infers shapes from the `ExportedProgram` (no `inputs=` needed), and `--dynamic-batch`
+  requires `--batch-size >= 2`. `--batch-upper-bound` applies to both sources (sets `max=` on
+  `torch.export.Dim` for torch-export, `ct.RangeDim.upper_bound` for trace).
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
 - For `openvino`, `--output` must be an `.xml` path (the `.bin` is written alongside); `--fp16`
   (default `True`) compresses weights via `ov.save_model(compress_to_fp16=...)`; `--dynamic-batch`
@@ -90,11 +100,15 @@ Runtime nuance:
 - For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`. `fp16` and
   `dynamic-int8` are post-training weight quantization of the saved `.tflite` via
   `ai-edge-quantizer` (no calibration); `int8` is static PT2E quantization (per-channel by
-  default, `--no-per-channel` for per-tensor) and needs calibration data.
+  default, `--no-per-channel` for per-tensor) and needs calibration data. `int8` models have
+  int8 input and output tensors (full-integer, like ai-edge-quantizer's own static recipe).
+  There is no `--dynamic-batch` (litert-torch cannot lower a symbolic batch), but the TFLite
+  interpreter can `resize_tensor_input()` at runtime for convolutional models.
 - For `coreml`, `--half`/`--int8`/`--int4` are mutually exclusive weight quantization flags.
   neuralnetwork uses `quantize_weights()` (`linear` for fp16, `linear_symmetric` for int8);
   mlprogram uses `linear_quantize_weights()` (per-channel int8) and `palettize_weights()`
-  (k-means int4, needs scikit-learn). `--half` is a no-op on mlprogram (already fp16).
+  (k-means int4, needs scikit-learn). `--half` is a no-op on mlprogram (already fp16). Per-tensor
+  int4 palettization is lossy (cosine ~0.98 on resnet18); the verify print is the safeguard.
 - For `litert`, `--nhwc-input` exposes the first model input as NHWC (channel-last).
 - Known test caveat: with every extra installed, the two `litert` static-int8 tests can fail in a
   full in-process `pytest` run with `No module named 'litert_converter.mlir.dialects.quant'`
@@ -108,19 +122,29 @@ Runtime nuance:
   fine-tuned models trained with custom normalization).
 - For `ncnn`, `--output` is a directory (not a file); pnnx intermediate files (`model.pt`, `model.pnnx.*`,
   `model_pnnx.py`) and `__pycache__` are removed automatically after export. `--fp16` defaults to `True`.
-  Requires `pip install 'timmx[ncnn]'` (installs `pnnx` only; the `ncnn` Python package is not needed
-  for export — the conversion is handled internally by `pnnx`).
+  Requires `pip install 'timmx[ncnn]'` (installs `pnnx` for conversion and `ncnn` for verification).
+  ncnn has no batch dimension: `--batch-size` must be `1`, and pnnx cannot convert batch-dependent
+  reshapes (ViT attention) — such exports fail verification (the error appends a hint).
 - For `tensorrt`, `--device cuda`, `pip install tensorrt`, and `onnxscript` (via `pip install 'timmx[onnx]'`)
   are required. TensorRT export uses dynamo-based ONNX as an intermediate step.
 - For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
+  The INT8 calibration table is only read/written when `--calibration-cache` is given (an implicit
+  cache file would silently reuse another model's table).
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
 - For `executorch`, delegates are selected via `--delegate xnnpack` (default) or `--delegate coreml`.
-- For `executorch`, modes are `fp32` and `int8`. INT8 uses PT2E quantization with the appropriate
-  quantizer per delegate (`XNNPACKQuantizer` for xnnpack, `CoreMLQuantizer` for coreml).
+- For `executorch`, modes are `fp32`, `dynamic-int8` and `int8`. INT8 uses PT2E quantization with
+  the appropriate quantizer per delegate (`XNNPACKQuantizer` for xnnpack, `CoreMLQuantizer` for
+  coreml). `dynamic-int8` (xnnpack only, `is_dynamic=True`, no calibration data, incompatible with
+  `--dynamic-batch`) is the mode that keeps transformers accurate; static int8 on ViT is garbage.
 - For `executorch`, `--compute-precision float16|float32` controls CoreML compute precision (only
   valid with `--delegate coreml`, defaults to float16). CoreML int8 auto-sets iOS 17 deployment target.
-- For `executorch`, `--dynamic-batch` requires `--batch-size >= 2`.
+- For `executorch`, `--dynamic-batch` requires `--batch-size >= 2` and plans memory for
+  `--batch-upper-bound` (default 8, must be `>= --batch-size`); the runtime rejects larger batches.
+  `_keep_batch_range()` widens the batch range lower bound to 1 (torch's 0/1 specialization would
+  make the CoreML delegate reject batch 1) and suppresses ShapeEnv guards during lowering: XNNPACK
+  passes re-trace convs, and torch's CPU conv heuristics guard on `batch < 16`, which otherwise
+  narrows the range and clamps the memory plan to 15 (or specializes the batch entirely).
 - For `torch-export`, dynamic batch capture is only stable with sample `--batch-size >= 2`.
 - For `torchscript`, `--method` selects `trace` (default, recommended) or `script`.
 - For `onnx`, `openvino`, `torchscript`, `coreml`, `torch-export`, `ncnn`, `executorch`, `litert`,

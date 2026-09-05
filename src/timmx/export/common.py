@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
+import numpy as np
 import timm
 import torch
 import typer
 from timm.data import resolve_data_config
 from timm.utils import reparameterize_model
 
+from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.types import Device
 
@@ -41,6 +43,9 @@ StdOpt = Annotated[
 ]
 
 DEFAULT_INPUT_SIZE = (3, 224, 224)
+# Exports whose outputs are less similar than this to PyTorch fail --verify. Loose enough for
+# int8/int4 quantization noise (typically > 0.99), strict enough to catch broken graphs.
+VERIFY_MIN_COSINE = 0.9
 DEFAULT_MEAN = (0.485, 0.456, 0.406)
 DEFAULT_STD = (0.229, 0.224, 0.225)
 SUPPORTED_INPUT_CHANNELS = frozenset({1, 3})
@@ -236,6 +241,37 @@ def wrap_with_preprocessing(
         normalize=normalize,
         softmax=softmax,
     )
+
+
+def verify_outputs(expected: torch.Tensor, actual: object, *, backend: str) -> None:
+    """Compare an exported model's output with the PyTorch output; fail on gross divergence.
+
+    Compares a single output tensor (backends pass the first output); the cosine similarity is
+    computed per sample over the flattened output and averaged over the batch.
+    """
+    reference = expected.detach().float().cpu().flatten(1).numpy()
+    try:
+        produced = np.asarray(actual, dtype=np.float32).reshape(reference.shape)
+    except ValueError as exc:
+        raise ExportError(
+            f"{backend} output has {np.size(actual)} values, PyTorch has {reference.size}."
+        ) from exc
+
+    norms = np.linalg.norm(reference, axis=1) * np.linalg.norm(produced, axis=1) + 1e-12
+    cosine = float(((reference * produced).sum(axis=1) / norms).mean())
+    max_abs = float(np.abs(reference - produced).max())
+    console.print(f"verify: cosine similarity {cosine:.4f}, max abs diff {max_abs:.3g} vs PyTorch")
+    if cosine < VERIFY_MIN_COSINE:
+        raise ExportError(
+            f"{backend} output diverges from PyTorch (cosine similarity {cosine:.3f} < "
+            f"{VERIFY_MIN_COSINE}). The exported file was kept for inspection; "
+            "use --no-verify to skip this check."
+        )
+
+
+def reference_output(model: torch.nn.Module, example_input: torch.Tensor) -> torch.Tensor:
+    with torch.no_grad():
+        return model(example_input)
 
 
 def resolve_model_input_channels(model: torch.nn.Module) -> int:

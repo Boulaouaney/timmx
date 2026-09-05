@@ -1,6 +1,6 @@
 [project]
 name = "timmx"
-version = "0.5.0"
+version = "0.6.0"
 description = "Extensible CLI and Python package for exporting timm models."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -36,6 +36,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
+  "numpy",
   "rich",
   "timm",
   "torch>=2.9",
@@ -46,8 +47,8 @@ dependencies = [
 coreml = ["coremltools>=9.0", "scikit-learn"]
 executorch = ["executorch>=1.4"]
 litert = ["litert-torch>=0.9"]
-ncnn = ["pnnx"]
-onnx = ["onnx>=1.16", "onnxscript", "onnxslim"]
+ncnn = ["ncnn", "pnnx"]
+onnx = ["onnx>=1.16", "onnxruntime", "onnxscript", "onnxslim"]
 openvino = ["openvino>=2025.0"]
 
 [project.scripts]

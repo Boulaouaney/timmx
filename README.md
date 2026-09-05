@@ -33,11 +33,11 @@ pip install timmx
 Install with specific backend extras:
 
 ```bash
-pip install 'timmx[onnx]'           # ONNX export
+pip install 'timmx[onnx]'           # ONNX export (onnxruntime included for verification)
 pip install 'timmx[openvino]'       # OpenVINO IR export
 pip install 'timmx[coreml]'         # Core ML export
 pip install 'timmx[litert]'         # LiteRT/TFLite export
-pip install 'timmx[ncnn]'           # ncnn export (via pnnx)
+pip install 'timmx[ncnn]'           # ncnn export (via pnnx; ncnn runtime for verification)
 pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML delegates)
 pip install 'timmx[onnx,coreml]'    # multiple backends
 ```
@@ -65,6 +65,15 @@ uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --group dev
 uv run timmx doctor
 uv run timmx --help
 ```
+
+## Export Verification
+
+Every backend reloads the file it just wrote, runs it on the sample input, and compares the
+output with PyTorch (cosine similarity and max abs diff are printed). An export whose output
+diverges (cosine similarity below `0.9`) fails with exit code 2 so silently broken artifacts
+never ship; the file is kept for inspection. Quantized exports are compared on the first
+calibration batch. Pass `--no-verify` to skip the check (for example when the runtime is not
+available on the export machine).
 
 ## Model Info
 
@@ -151,15 +160,17 @@ uv run timmx export coreml resnet18 \
   --output ./artifacts/resnet18.mlpackage
 ```
 
-Using `torch.export` as source (beta):
+Models are captured with `torch.export` by default; the exported model has one input named
+`input` and one output named `output`. If a model fails to capture, fall back to
+`torch.jit.trace`:
 
 ```bash
 uv run timmx export coreml resnet18 \
   --pretrained \
-  --source torch-export \
+  --source trace \
   --convert-to mlprogram \
   --compute-precision float16 \
-  --output ./artifacts/resnet18_te.mlpackage
+  --output ./artifacts/resnet18_traced.mlpackage
 ```
 
 Flexible batch size:
@@ -198,13 +209,16 @@ uv run timmx export coreml resnet18 \
   --half \
   --output ./artifacts/resnet18_half.mlmodel
 
-# 8-bit k-means quantization (neuralnetwork)
+# 8-bit linear quantization (neuralnetwork)
 uv run timmx export coreml resnet18 \
   --pretrained \
   --convert-to neuralnetwork \
   --int8 \
   --output ./artifacts/resnet18_int8.mlmodel
 ```
+
+> `--int4` palettizes weights with per-tensor k-means and is lossy (cosine similarity around
+> `0.98` on ResNet-18). Check the `verify:` line printed after export before shipping it.
 
 ### LiteRT / TFLite
 
@@ -235,6 +249,12 @@ uv run timmx export litert resnet18 \
   --calibration-data ./my-images/ \
   --output ./artifacts/resnet18_int8.tflite
 ```
+
+> `int8` models take and return int8 tensors. Quantize inputs with the `scale` and `zero_point`
+> from the interpreter's input details (`round(x / scale) + zero_point`) and dequantize the
+> output the same way; `--normalize` keeps that input in `[0, 1]` before quantization.
+> LiteRT has no `--dynamic-batch`, but `Interpreter.resize_tensor_input()` works at runtime for
+> convolutional models (not for ViT-style models whose reshapes bake in the batch size).
 
 Limit the number of calibration images loaded:
 
@@ -297,6 +317,10 @@ uv run timmx export ncnn resnet18 \
   --output ./artifacts/resnet18_ncnn
 ```
 
+ncnn models have no batch dimension, so `--batch-size` must stay `1`. Models with
+batch-dependent reshapes (ViT-style attention) cannot be converted by pnnx; the export fails
+verification instead of writing a silently wrong model.
+
 Export without fp16 weight quantization:
 
 ```bash
@@ -337,6 +361,9 @@ uv run timmx export tensorrt resnet18 \
   --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
   --output ./artifacts/resnet18_int8.engine
 ```
+
+Pass `--calibration-cache ./resnet18.cache` to save the INT8 calibration table and reuse it on
+later builds of the same model; without the flag every export calibrates from scratch.
 
 Dynamic batch size:
 
@@ -400,6 +427,16 @@ uv run timmx export executorch resnet18 \
   --output ./artifacts/resnet18_int8.pte
 ```
 
+Dynamic INT8 (int8 weights, activations quantized on the fly at runtime; no calibration data).
+This is the mode to use for transformer models, where static INT8 loses accuracy:
+
+```bash
+uv run timmx export executorch vit_tiny_patch16_224 \
+  --pretrained \
+  --mode dynamic-int8 \
+  --output ./artifacts/vit_tiny_dynamic_int8.pte
+```
+
 INT8 quantized with CoreML:
 
 ```bash
@@ -418,8 +455,13 @@ uv run timmx export executorch resnet18 \
   --pretrained \
   --dynamic-batch \
   --batch-size 2 \
+  --batch-upper-bound 16 \
   --output ./artifacts/resnet18_dynamic.pte
 ```
+
+ExecuTorch plans memory ahead of time, so the runtime accepts batches from `1` up to
+`--batch-upper-bound` (default `8`) and rejects larger ones. `--mode dynamic-int8` does not
+support `--dynamic-batch`.
 
 ### torch.export
 

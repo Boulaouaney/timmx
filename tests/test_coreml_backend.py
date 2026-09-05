@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from timmx.errors import ConfigurationError
-from timmx.export.coreml_backend import CoreMLBackend
+from timmx.export.coreml_backend import CoreMLBackend, ExportSource
 
 ct = pytest.importorskip("coremltools")
 
@@ -324,3 +324,18 @@ def test_export_coreml_int4_mlprogram(tmp_path: Path) -> None:
     CoreMLBackend().create_command()(**kwargs)
     assert output_path.exists()
     assert "constexpr_lut_to_dense" in _mil_op_types(output_path)
+
+
+def test_default_source_is_torch_export(tmp_path: Path) -> None:
+    import inspect
+
+    command = CoreMLBackend().create_command()
+    assert inspect.signature(command).parameters["source"].default == ExportSource.torch_export
+
+    output = tmp_path / "default_source.mlpackage"
+    kwargs = _build_kwargs(output)
+    del kwargs["source"]
+    command(**kwargs)
+    spec = ct.models.MLModel(str(output), skip_model_load=True).get_spec()
+    assert [feature.name for feature in spec.description.input] == ["input"]
+    assert [feature.name for feature in spec.description.output] == ["output"]

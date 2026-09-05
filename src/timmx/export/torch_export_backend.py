@@ -23,6 +23,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -54,7 +56,9 @@ class TorchExportBackend(ExportBackend):
             std: StdOpt = None,
             verify: Annotated[
                 bool,
-                typer.Option(help="Load the saved .pt2 archive after export to validate it."),
+                typer.Option(
+                    help="Reload the saved .pt2 archive and compare its output with PyTorch."
+                ),
             ] = True,
         ) -> None:
             if dynamic_batch and batch_size < 2:
@@ -99,8 +103,12 @@ class TorchExportBackend(ExportBackend):
 
             if verify:
                 try:
-                    torch.export.load(str(prep.output_path))
+                    loaded = torch.export.load(str(prep.output_path)).module()
+                    with torch.no_grad():
+                        actual = loaded(prep.example_input)
                 except Exception as exc:
                     raise ExportError(f"Saved torch.export archive failed to load: {exc}") from exc
+                expected = reference_output(prep.model, prep.example_input)
+                verify_outputs(expected, actual.cpu().numpy(), backend="torch.export")
 
         return command

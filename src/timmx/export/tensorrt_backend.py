@@ -236,7 +236,7 @@ class TensorRTBackend(ExportBackend):
             }
             if dynamic_batch:
                 batch_dim = torch.export.Dim("batch", min=batch_min, max=batch_max)
-                export_kwargs["dynamic_shapes"] = {"x": {0: batch_dim}}
+                export_kwargs["dynamic_shapes"] = ({0: batch_dim},)
 
             try:
                 torch.onnx.export(
@@ -320,7 +320,7 @@ class TensorRTBackend(ExportBackend):
 
 def _make_calibrator_class(trt: object) -> type:
     class _Calibrator(trt.IInt8MinMaxCalibrator):
-        def __init__(self, batches: list[torch.Tensor], cache_path: Path) -> None:
+        def __init__(self, batches: list[torch.Tensor], cache_path: Path | None) -> None:
             super().__init__()
             self._batches = batches
             self._batch_iter = iter(batches)
@@ -340,12 +340,13 @@ def _make_calibrator_class(trt: object) -> type:
                 return None
 
         def read_calibration_cache(self) -> bytes | None:
-            if self._cache_path.exists():
+            if self._cache_path is not None and self._cache_path.exists():
                 return self._cache_path.read_bytes()
             return None
 
         def write_calibration_cache(self, cache: bytes) -> None:
-            self._cache_path.write_bytes(cache)
+            if self._cache_path is not None:
+                self._cache_path.write_bytes(cache)
 
     return _Calibrator
 
@@ -379,9 +380,9 @@ def _create_calibrator(
         std=std,
         normalize_images=normalize_images,
     )
-    cache_path = calibration_cache or Path("tensorrt_calibration.cache")
+    # No implicit cache file: a stale cache from another model would silently be reused.
     calibrator_cls = _make_calibrator_class(trt)
-    return calibrator_cls(batches=batches, cache_path=cache_path)
+    return calibrator_cls(batches=batches, cache_path=calibration_cache)
 
 
 def _require_onnxscript() -> None:

@@ -66,8 +66,10 @@ def test_export_executorch_help_shows_options() -> None:
     assert "--mode" in _plain(result.output)
     assert "compute-preci" in _plain(result.output)
     assert "--dynamic-batch" in _plain(result.output)
+    assert "--batch-upper-b" in _plain(result.output)
     assert "--calibration-d" in _plain(result.output)
     assert "--per-channel" in _plain(result.output)
+    assert "--verify" in _plain(result.output)
     assert "--normalize" in _plain(result.output)
     assert "--softmax" in _plain(result.output)
     assert "--mean" in _plain(result.output)
@@ -81,6 +83,7 @@ def test_export_onnx_help_shows_options() -> None:
     assert "--opset" in _plain(result.output)
     assert "--dynamic-batch" in _plain(result.output)
     assert "--check" in _plain(result.output)
+    assert "--verify" in _plain(result.output)
 
 
 def test_export_openvino_help_shows_options() -> None:
@@ -165,6 +168,7 @@ def test_export_ncnn_help_shows_options() -> None:
     assert result.exit_code == 0
     assert "--output" in _plain(result.output)
     assert "--fp16" in _plain(result.output)
+    assert "--verify" in _plain(result.output)
     assert "--device" in _plain(result.output)
     assert "--normalize" in _plain(result.output)
     assert "--softmax" in _plain(result.output)
