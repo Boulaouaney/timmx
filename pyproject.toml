@@ -44,6 +44,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+coreai = ["coreai-torch>=0.4.2"]
 coreml = ["coremltools>=9.0", "scikit-learn"]
 executorch = ["executorch>=1.4"]
 litert = ["litert-torch>=0.9"]

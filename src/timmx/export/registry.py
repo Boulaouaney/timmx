@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from timmx.export.base import ExportBackend
+from timmx.export.coreai_backend import CoreAIBackend
 from timmx.export.coreml_backend import CoreMLBackend
 from timmx.export.executorch_backend import ExecuTorchBackend
 from timmx.export.litert_backend import LiteRTBackend
@@ -38,6 +39,7 @@ class BackendRegistry:
 
 def create_builtin_registry() -> BackendRegistry:
     registry = BackendRegistry()
+    registry.register(CoreAIBackend())
     registry.register(CoreMLBackend())
     registry.register(ExecuTorchBackend())
     registry.register(LiteRTBackend())
