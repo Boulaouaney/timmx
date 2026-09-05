@@ -5,9 +5,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
+import numpy as np
+import torch
 import typer
 
-from timmx.errors import ExportError
+from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
     BatchSizeOpt,
@@ -23,6 +25,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -32,15 +36,17 @@ class NcnnBackend(ExportBackend):
     help = "Export a timm model to ncnn (.param/.bin) via pnnx."
 
     def check_dependencies(self) -> DependencyStatus:
-        try:
-            __import__("pnnx")
-            return DependencyStatus(available=True, missing_packages=[], install_hint="")
-        except ImportError:
-            return DependencyStatus(
-                available=False,
-                missing_packages=["pnnx"],
-                install_hint="pip install 'timmx[ncnn]'",
-            )
+        missing = []
+        for mod in ("pnnx", "ncnn"):
+            try:
+                __import__(mod)
+            except ImportError:
+                missing.append(mod)
+        return DependencyStatus(
+            available=not missing,
+            missing_packages=missing,
+            install_hint="pip install 'timmx[ncnn]'",
+        )
 
     def create_command(self) -> Callable[..., None]:
         def command(
@@ -59,11 +65,20 @@ class NcnnBackend(ExportBackend):
                 bool,
                 typer.Option(help="Export weights in fp16 precision."),
             ] = True,
+            verify: Annotated[
+                bool,
+                typer.Option(help="Run the exported model with ncnn and compare with PyTorch."),
+            ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
         ) -> None:
+            if batch_size != 1:
+                raise ConfigurationError(
+                    "ncnn models have no batch dimension; --batch-size must be 1."
+                )
+
             prep = prepare_export(
                 model_name=model_name,
                 output=output,
@@ -127,4 +142,45 @@ class NcnnBackend(ExportBackend):
             if pycache.exists():
                 shutil.rmtree(pycache, ignore_errors=True)
 
+            if verify:
+                _verify_ncnn_model(
+                    ncnnparam,
+                    ncnnbin,
+                    prep.example_input,
+                    reference_output(prep.model, prep.example_input),
+                )
+
         return command
+
+
+def _verify_ncnn_model(
+    param_path: Path, bin_path: Path, example_input: torch.Tensor, expected: torch.Tensor
+) -> None:
+    try:
+        import ncnn
+    except ImportError as exc:
+        raise ExportError(
+            "ncnn is required to verify ncnn export. "
+            "Install with: pip install 'timmx[ncnn]' or pass --no-verify"
+        ) from exc
+
+    try:
+        net = ncnn.Net()
+        if net.load_param(str(param_path)) != 0 or net.load_model(str(bin_path)) != 0:
+            raise RuntimeError("failed to load model.ncnn.param / model.ncnn.bin")
+        extractor = net.create_extractor()
+        extractor.input("in0", ncnn.Mat(np.ascontiguousarray(example_input[0].cpu().numpy())))
+        ret, out = extractor.extract("out0")
+        if ret != 0:
+            raise RuntimeError(f"extract returned {ret}")
+        actual = np.array(out)
+    except Exception as exc:
+        raise ExportError(f"Saved ncnn model failed verification: {exc}") from exc
+
+    try:
+        verify_outputs(expected, actual, backend="ncnn")
+    except ExportError as exc:
+        raise ExportError(
+            f"{exc} ncnn has no batch dimension, so pnnx cannot convert models with "
+            "batch-dependent reshapes (e.g. ViT attention); see the pnnx messages above."
+        ) from exc

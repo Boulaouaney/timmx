@@ -23,6 +23,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -35,7 +37,7 @@ class OnnxBackend(ExportBackend):
 
     def check_dependencies(self) -> DependencyStatus:
         missing = []
-        for mod in ("onnx", "onnxscript", "onnxslim"):
+        for mod in ("onnx", "onnxscript", "onnxslim", "onnxruntime"):
             try:
                 __import__(mod)
             except ImportError:
@@ -69,6 +71,12 @@ class OnnxBackend(ExportBackend):
             check: Annotated[bool, typer.Option(help="Run ONNX checker after export.")] = True,
             slim: Annotated[
                 bool, typer.Option(help="Optimize the exported model with onnxslim.")
+            ] = True,
+            verify: Annotated[
+                bool,
+                typer.Option(
+                    help="Run the exported model with onnxruntime and compare with PyTorch."
+                ),
             ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
@@ -141,5 +149,25 @@ class OnnxBackend(ExportBackend):
                     onnx.checker.check_model(str(prep.output_path))
                 except Exception as exc:
                     raise ExportError(f"Exported model failed ONNX check: {exc}") from exc
+
+            if verify:
+                try:
+                    import onnxruntime as ort
+                except ImportError as exc:
+                    raise ExportError(
+                        "onnxruntime is required to verify ONNX export. "
+                        "Install with: pip install 'timmx[onnx]' or pass --no-verify"
+                    ) from exc
+
+                try:
+                    session = ort.InferenceSession(
+                        str(prep.output_path), providers=["CPUExecutionProvider"]
+                    )
+                    actual = session.run(None, {"input": prep.example_input.cpu().numpy()})[0]
+                except Exception as exc:
+                    raise ExportError(f"Saved ONNX model failed verification: {exc}") from exc
+                verify_outputs(
+                    reference_output(prep.model, prep.example_input), actual, backend="ONNX"
+                )
 
         return command

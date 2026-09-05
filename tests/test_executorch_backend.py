@@ -16,6 +16,7 @@ def _build_kwargs(
     compute_precision: str | None = None,
     batch_size: int = 1,
     dynamic_batch: bool = False,
+    batch_upper_bound: int = 8,
     calibration_data: Path | None = None,
     calibration_steps: int | None = None,
     calibration_samples: int | None = None,
@@ -26,6 +27,7 @@ def _build_kwargs(
     mean: tuple[float, float, float] | None = None,
     std: tuple[float, float, float] | None = None,
     checkpoint: Path | None = None,
+    verify: bool = True,
 ) -> dict:
     return {
         "model_name": "resnet18",
@@ -41,11 +43,13 @@ def _build_kwargs(
         "mode": mode,
         "compute_precision": compute_precision,
         "dynamic_batch": dynamic_batch,
+        "batch_upper_bound": batch_upper_bound,
         "calibration_data": calibration_data,
         "calibration_steps": calibration_steps,
         "calibration_samples": calibration_samples,
         "random_calibration": random_calibration,
         "per_channel": per_channel,
+        "verify": verify,
         "normalize": normalize,
         "softmax": softmax,
         "mean": mean,
@@ -83,6 +87,16 @@ def test_rejects_dynamic_batch_with_batch_size_1(tmp_path: Path) -> None:
         command(**_build_kwargs(tmp_path / "m.pte", dynamic_batch=True, batch_size=1))
 
 
+def test_rejects_batch_upper_bound_below_batch_size(tmp_path: Path) -> None:
+    command = ExecuTorchBackend().create_command()
+    with pytest.raises(ConfigurationError, match="--batch-upper-bound"):
+        command(
+            **_build_kwargs(
+                tmp_path / "m.pte", dynamic_batch=True, batch_size=4, batch_upper_bound=2
+            )
+        )
+
+
 def test_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: Path) -> None:
     backend = ExecuTorchBackend()
     command = backend.create_command()
@@ -109,13 +123,19 @@ def test_allows_mean_std_for_int8_calibration_without_wrapper_flags(
         def write_to_file(self, handle) -> None:
             handle.write(b"pte")
 
-    def fake_export_quantized(**kwargs):
+    def fake_resolve_calibration_batches(**kwargs):
         captured.update(kwargs)
-        return _FakeProgram()
+        return [torch.randn(1, 3, 32, 32)]
 
     monkeypatch.setattr("timmx.export.executorch_backend._import_executorch", lambda: None)
     monkeypatch.setattr("timmx.export.executorch_backend._build_partitioner", lambda **_: [])
-    monkeypatch.setattr("timmx.export.executorch_backend._export_quantized", fake_export_quantized)
+    monkeypatch.setattr(
+        "timmx.export.executorch_backend.resolve_calibration_batches",
+        fake_resolve_calibration_batches,
+    )
+    monkeypatch.setattr(
+        "timmx.export.executorch_backend._export_quantized", lambda **_: _FakeProgram()
+    )
 
     mean = (0.5, 0.25, 0.75)
     std = (0.125, 0.5, 0.25)
@@ -127,13 +147,14 @@ def test_allows_mean_std_for_int8_calibration_without_wrapper_flags(
             random_calibration=True,
             mean=mean,
             std=std,
+            verify=False,
         )
     )
 
     assert output.exists()
     assert captured["mean"] == mean
     assert captured["std"] == std
-    assert captured["normalize_calibration_images"] is True
+    assert captured["normalize_images"] is True
 
 
 def test_int8_wrapper_disables_image_normalization_for_calibration(
@@ -145,13 +166,19 @@ def test_int8_wrapper_disables_image_normalization_for_calibration(
         def write_to_file(self, handle) -> None:
             handle.write(b"pte")
 
-    def fake_export_quantized(**kwargs):
+    def fake_resolve_calibration_batches(**kwargs):
         captured.update(kwargs)
-        return _FakeProgram()
+        return [torch.randn(1, 3, 32, 32)]
 
     monkeypatch.setattr("timmx.export.executorch_backend._import_executorch", lambda: None)
     monkeypatch.setattr("timmx.export.executorch_backend._build_partitioner", lambda **_: [])
-    monkeypatch.setattr("timmx.export.executorch_backend._export_quantized", fake_export_quantized)
+    monkeypatch.setattr(
+        "timmx.export.executorch_backend.resolve_calibration_batches",
+        fake_resolve_calibration_batches,
+    )
+    monkeypatch.setattr(
+        "timmx.export.executorch_backend._export_quantized", lambda **_: _FakeProgram()
+    )
 
     output = tmp_path / "model_int8_wrapped.pte"
     ExecuTorchBackend().create_command()(
@@ -163,11 +190,12 @@ def test_int8_wrapper_disables_image_normalization_for_calibration(
             softmax=True,
             mean=(0.5, 0.25, 0.75),
             std=(0.125, 0.5, 0.25),
+            verify=False,
         )
     )
 
     assert output.exists()
-    assert captured["normalize_calibration_images"] is False
+    assert captured["normalize_images"] is False
 
 
 def test_int8_softmax_only_keeps_image_normalization_for_calibration(
@@ -179,13 +207,19 @@ def test_int8_softmax_only_keeps_image_normalization_for_calibration(
         def write_to_file(self, handle) -> None:
             handle.write(b"pte")
 
-    def fake_export_quantized(**kwargs):
+    def fake_resolve_calibration_batches(**kwargs):
         captured.update(kwargs)
-        return _FakeProgram()
+        return [torch.randn(1, 3, 32, 32)]
 
     monkeypatch.setattr("timmx.export.executorch_backend._import_executorch", lambda: None)
     monkeypatch.setattr("timmx.export.executorch_backend._build_partitioner", lambda **_: [])
-    monkeypatch.setattr("timmx.export.executorch_backend._export_quantized", fake_export_quantized)
+    monkeypatch.setattr(
+        "timmx.export.executorch_backend.resolve_calibration_batches",
+        fake_resolve_calibration_batches,
+    )
+    monkeypatch.setattr(
+        "timmx.export.executorch_backend._export_quantized", lambda **_: _FakeProgram()
+    )
 
     output = tmp_path / "model_int8_softmax_only.pte"
     ExecuTorchBackend().create_command()(
@@ -194,11 +228,35 @@ def test_int8_softmax_only_keeps_image_normalization_for_calibration(
             mode="int8",
             random_calibration=True,
             softmax=True,
+            verify=False,
         )
     )
 
     assert output.exists()
-    assert captured["normalize_calibration_images"] is True
+    assert captured["normalize_images"] is True
+
+
+def test_rejects_dynamic_int8_with_coreml_delegate(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="dynamic-int8.*xnnpack"):
+        ExecuTorchBackend().create_command()(
+            **_build_kwargs(tmp_path / "m.pte", delegate="coreml", mode="dynamic-int8")
+        )
+
+
+def test_rejects_dynamic_int8_with_dynamic_batch(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="dynamic-int8.*--dynamic-batch"):
+        ExecuTorchBackend().create_command()(
+            **_build_kwargs(
+                tmp_path / "m.pte", mode="dynamic-int8", dynamic_batch=True, batch_size=2
+            )
+        )
+
+
+def test_rejects_calibration_args_with_dynamic_int8(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="only valid with --mode int8"):
+        ExecuTorchBackend().create_command()(
+            **_build_kwargs(tmp_path / "m.pte", mode="dynamic-int8", random_calibration=True)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +335,7 @@ def test_export_xnnpack_fp32_wraps_preprocessing_and_softmax(
             softmax=True,
             mean=mean,
             std=std,
+            verify=False,
         )
     )
 
@@ -299,12 +358,23 @@ def test_export_xnnpack_fp32_wraps_preprocessing_and_softmax(
 
 @requires_executorch
 def test_export_xnnpack_dynamic_batch(tmp_path: Path) -> None:
+    from executorch.runtime import Runtime
+
     output = tmp_path / "model_dynamic.pte"
     backend = ExecuTorchBackend()
     command = backend.create_command()
-    command(**_build_kwargs(output, dynamic_batch=True, batch_size=2))
+    command(**_build_kwargs(output, dynamic_batch=True, batch_size=2, batch_upper_bound=3))
     assert output.exists()
-    assert output.stat().st_size > 0
+
+    def run(batch: int) -> torch.Tensor:
+        method = Runtime.get().load_program(str(output)).load_method("forward")
+        return method.execute([torch.randn(batch, 3, 32, 32)])[0]
+
+    # Memory is planned for the upper bound, so the runtime accepts 1..3 and rejects 4.
+    assert tuple(run(1).shape)[0] == 1
+    assert tuple(run(3).shape)[0] == 3
+    with pytest.raises(Exception):
+        run(4)
 
 
 @requires_executorch
@@ -340,11 +410,19 @@ def test_pt2e_quantized_module_exported_in_eval_mode(
 
     output = tmp_path / "model_int8_eval.pte"
     ExecuTorchBackend().create_command()(
-        **_build_kwargs(output, mode="int8", random_calibration=True)
+        **_build_kwargs(output, mode="int8", random_calibration=True, verify=False)
     )
 
     assert output.exists()
     assert captured["training"] is False
+
+
+@requires_executorch
+def test_export_xnnpack_dynamic_int8(tmp_path: Path) -> None:
+    output = tmp_path / "model_dynamic_int8.pte"
+    ExecuTorchBackend().create_command()(**_build_kwargs(output, mode="dynamic-int8"))
+    assert output.exists()
+    assert output.stat().st_size > 0
 
 
 @requires_executorch

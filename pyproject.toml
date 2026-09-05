@@ -46,8 +46,8 @@ dependencies = [
 coreml = ["coremltools>=9.0", "scikit-learn"]
 executorch = ["executorch>=1.4"]
 litert = ["litert-torch>=0.9"]
-ncnn = ["pnnx"]
-onnx = ["onnx>=1.16", "onnxscript", "onnxslim"]
+ncnn = ["ncnn", "pnnx"]
+onnx = ["onnx>=1.16", "onnxruntime", "onnxscript", "onnxslim"]
 openvino = ["openvino>=2025.0"]
 
 [project.scripts]

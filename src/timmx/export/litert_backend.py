@@ -5,6 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
+import numpy as np
 import torch
 import typer
 
@@ -26,6 +27,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -124,7 +127,10 @@ class LiteRTBackend(ExportBackend):
                 typer.Option(help="Expose the first model input as NHWC instead of NCHW."),
             ] = False,
             verify: Annotated[
-                bool, typer.Option(help="Load and allocate the exported TFLite model.")
+                bool,
+                typer.Option(
+                    help="Run the exported model with ai-edge-litert and compare with PyTorch."
+                ),
             ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
@@ -196,6 +202,7 @@ class LiteRTBackend(ExportBackend):
                     per_channel=per_channel,
                 )
 
+            verify_input = example_input
             if nhwc_input:
                 _validate_nhwc_input_compatibility(example_input)
                 convert_module = litert_torch.to_channel_last_io(convert_module, args=[0])
@@ -217,7 +224,9 @@ class LiteRTBackend(ExportBackend):
                 _quantize_weights(prep.output_path, mode)
 
             if verify:
-                _verify_tflite_model(prep.output_path)
+                _verify_tflite_model(
+                    prep.output_path, example_input, reference_output(prep.model, verify_input)
+                )
 
         return command
 
@@ -307,20 +316,34 @@ def _to_nhwc_input(example_input: torch.Tensor) -> torch.Tensor:
     return example_input.permute(*dims).contiguous()
 
 
-def _verify_tflite_model(output_path: Path) -> None:
+def _verify_tflite_model(
+    output_path: Path, runtime_input: torch.Tensor, expected: torch.Tensor
+) -> None:
     try:
         from ai_edge_litert import interpreter as tfl_interpreter
     except ImportError as exc:
         raise ExportError(
             "ai-edge-litert is required to verify LiteRT export. "
-            "Install with: pip install ai-edge-litert"
+            "Install with: pip install 'timmx[litert]' or pass --no-verify"
         ) from exc
 
     try:
         interpreter = tfl_interpreter.Interpreter(model_path=str(output_path))
-        interpreter.allocate_tensors()
+        runner = interpreter.get_signature_runner("serving_default")
+        name, details = next(iter(runner.get_input_details().items()))
+        x = runtime_input.cpu().numpy().astype(np.float32)
+        if details["dtype"] == np.int8:
+            # Full-integer model: quantize the input the way a client would.
+            scale, zero_point = details["quantization"]
+            x = np.clip(np.round(x / scale + zero_point), -128, 127).astype(np.int8)
+        actual = next(iter(runner(**{name: x}).values()))
+        out_details = next(iter(runner.get_output_details().values()))
+        if out_details["dtype"] == np.int8:
+            scale, zero_point = out_details["quantization"]
+            actual = (actual.astype(np.float32) - zero_point) * scale
     except Exception as exc:
         raise ExportError(f"Saved LiteRT model failed verification: {exc}") from exc
+    verify_outputs(expected, actual, backend="LiteRT")
 
 
 def _import_litert_torch() -> object:

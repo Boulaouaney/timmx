@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import platform
 from collections.abc import Callable
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -24,6 +26,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -84,8 +88,10 @@ class CoreMLBackend(ExportBackend):
             device: DeviceOpt = Device.cpu,
             source: Annotated[
                 ExportSource,
-                typer.Option(help="Model capture method: trace (default) or torch-export (beta)."),
-            ] = ExportSource.trace,
+                typer.Option(
+                    help="Model capture method: torch-export (default) or trace (torch.jit.trace)."
+                ),
+            ] = ExportSource.torch_export,
             convert_to: Annotated[
                 ConvertTo, typer.Option(help="Core ML model type to generate.")
             ] = ConvertTo.mlprogram,
@@ -112,7 +118,8 @@ class CoreMLBackend(ExportBackend):
             mean: MeanOpt = None,
             std: StdOpt = None,
             verify: Annotated[
-                bool, typer.Option(help="Reload the saved Core ML model metadata after export.")
+                bool,
+                typer.Option(help="Reload the saved model and compare its output with PyTorch."),
             ] = True,
         ) -> None:
             if convert_to == ConvertTo.neuralnetwork and compute_precision is not None:
@@ -137,13 +144,6 @@ class CoreMLBackend(ExportBackend):
                 raise ConfigurationError("--int4 is only supported with --convert-to mlprogram.")
 
             ct = _import_coremltools()
-
-            if source == ExportSource.torch_export:
-                console.print(
-                    "[bold yellow]note:[/bold yellow] torch.export support in coremltools "
-                    "is beta. If conversion fails, try the default --source trace.",
-                    highlight=False,
-                )
 
             prep = prepare_export(
                 model_name=model_name,
@@ -190,7 +190,9 @@ class CoreMLBackend(ExportBackend):
                 try:
                     coreml_model = ct.convert(exported_program, **convert_kwargs)
                 except Exception as exc:
-                    raise ExportError(f"Core ML conversion failed: {exc}") from exc
+                    raise ExportError(
+                        f"Core ML conversion failed: {exc} (try --source trace)"
+                    ) from exc
             else:
                 with torch.no_grad():
                     try:
@@ -222,7 +224,14 @@ class CoreMLBackend(ExportBackend):
                 try:
                     coreml_model = ct.convert(traced_model, **convert_kwargs)
                 except Exception as exc:
-                    raise ExportError(f"Core ML conversion failed: {exc}") from exc
+                    raise ExportError(
+                        f"Core ML conversion failed: {exc} (try --source torch-export)"
+                    ) from exc
+
+            try:
+                coreml_model = _name_io(coreml_model, ct)
+            except Exception as exc:
+                raise ExportError(f"Failed to name Core ML inputs/outputs: {exc}") from exc
 
             bits = 4 if int4 else 8 if int8 else 16 if half else 32
             if bits < 32:
@@ -240,12 +249,48 @@ class CoreMLBackend(ExportBackend):
                 raise ExportError(f"Failed to save Core ML model: {exc}") from exc
 
             if verify:
-                try:
-                    ct.models.MLModel(str(prep.output_path), skip_model_load=True)
-                except Exception as exc:
-                    raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
+                _verify_coreml_model(
+                    prep.output_path,
+                    prep.example_input,
+                    reference_output(prep.model, prep.example_input),
+                    ct=ct,
+                )
 
         return command
+
+
+def _name_io(coreml_model: object, ct: object) -> object:
+    """Name the single input/output "input"/"output" regardless of the capture source."""
+    spec = coreml_model.get_spec()
+    renames = {spec.description.input[0].name: "input", spec.description.output[0].name: "output"}
+    for old, new in renames.items():
+        if old != new:
+            ct.utils.rename_feature(
+                spec, old, new, rename_inputs=new == "input", rename_outputs=new == "output"
+            )
+    if spec.WhichOneof("Type") == "neuralNetwork":
+        # rename_feature updates the interface but not the layer blobs of a neuralnetwork spec.
+        for layer in spec.neuralNetwork.layers:
+            for blobs in (layer.input, layer.output):
+                for index, name in enumerate(blobs):
+                    if name in renames:
+                        blobs[index] = renames[name]
+    return ct.models.MLModel(spec, weights_dir=coreml_model.weights_dir, skip_model_load=True)
+
+
+def _verify_coreml_model(
+    output_path: Path, example_input: object, expected: object, *, ct: object
+) -> None:
+    try:
+        if platform.system() != "Darwin":
+            ct.models.MLModel(str(output_path), skip_model_load=True)
+            console.print("[dim]verify: metadata only (Core ML inference needs macOS)[/dim]")
+            return
+        loaded = ct.models.MLModel(str(output_path))
+        actual = loaded.predict({"input": example_input.cpu().numpy()})["output"]
+    except Exception as exc:
+        raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
+    verify_outputs(expected, actual, backend="Core ML")
 
 
 def _build_input_shape(

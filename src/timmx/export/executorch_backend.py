@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import contextlib
+import platform
+from collections.abc import Callable, Iterator
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -8,6 +10,7 @@ from typing import Annotated
 import torch
 import typer
 
+from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.calibration import resolve_calibration_batches
@@ -26,6 +29,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -37,6 +42,7 @@ class ExecuTorchDelegate(StrEnum):
 
 class ExecuTorchMode(StrEnum):
     fp32 = "fp32"
+    dynamic_int8 = "dynamic-int8"
     int8 = "int8"
 
 
@@ -78,7 +84,13 @@ class ExecuTorchBackend(ExportBackend):
             ] = ExecuTorchDelegate.xnnpack,
             mode: Annotated[
                 ExecuTorchMode,
-                typer.Option(help="Export precision mode."),
+                typer.Option(
+                    help=(
+                        "Export precision: fp32, dynamic-int8 (int8 weights, activations "
+                        "quantized at runtime; no calibration, good for transformers) or int8 "
+                        "(static, needs calibration)."
+                    )
+                ),
             ] = ExecuTorchMode.fp32,
             compute_precision: Annotated[
                 ComputePrecision | None,
@@ -88,6 +100,15 @@ class ExecuTorchBackend(ExportBackend):
                 bool,
                 typer.Option("--dynamic-batch", help="Mark batch axis as dynamic."),
             ] = False,
+            batch_upper_bound: Annotated[
+                int,
+                typer.Option(
+                    help=(
+                        "Largest batch the exported program accepts with --dynamic-batch; "
+                        "ExecuTorch plans memory for this size."
+                    )
+                ),
+            ] = 8,
             calibration_data: Annotated[
                 Path | None,
                 typer.Option(
@@ -133,11 +154,27 @@ class ExecuTorchBackend(ExportBackend):
                     "Disable with --no-per-channel for per-tensor."
                 ),
             ] = True,
+            verify: Annotated[
+                bool,
+                typer.Option(
+                    help="Run the exported .pte with the ExecuTorch runtime and compare with PyTorch."
+                ),
+            ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
         ) -> None:
+            if mode == ExecuTorchMode.dynamic_int8:
+                if delegate != ExecuTorchDelegate.xnnpack:
+                    raise ConfigurationError(
+                        "--mode dynamic-int8 is only supported with --delegate xnnpack."
+                    )
+                if dynamic_batch:
+                    raise ConfigurationError(
+                        "--mode dynamic-int8 does not support --dynamic-batch "
+                        "(per-token quantization specializes the batch dimension)."
+                    )
             if compute_precision is not None and delegate != ExecuTorchDelegate.coreml:
                 raise ConfigurationError(
                     "--compute-precision is only supported with --delegate coreml."
@@ -156,6 +193,8 @@ class ExecuTorchBackend(ExportBackend):
                 raise ConfigurationError(
                     "--dynamic-batch requires --batch-size >= 2 for stable symbolic shape capture."
                 )
+            if dynamic_batch and batch_upper_bound < batch_size:
+                raise ConfigurationError("--batch-upper-bound must be >= --batch-size.")
             if (mean is not None or std is not None) and not normalize:
                 if mode != ExecuTorchMode.int8:
                     raise ConfigurationError(
@@ -186,30 +225,43 @@ class ExecuTorchBackend(ExportBackend):
                 quantized=mode == ExecuTorchMode.int8,
             )
 
-            if mode == ExecuTorchMode.int8:
-                et_program = _export_quantized(
-                    model=prep.model,
-                    example_input=prep.example_input,
-                    resolved_input_size=prep.resolved_input_size,
-                    torch_device=prep.torch_device,
-                    batch_size=batch_size,
-                    calibration_data=calibration_data,
-                    calibration_steps=calibration_steps,
-                    calibration_samples=calibration_samples,
-                    random_calibration=random_calibration,
-                    per_channel=per_channel,
-                    dynamic_batch=dynamic_batch,
-                    delegate=delegate,
-                    partitioner=partitioner,
-                    mean=mean,
-                    std=std,
-                    normalize_calibration_images=not normalize,
-                )
-            else:
+            verify_input = prep.example_input
+            if mode == ExecuTorchMode.fp32:
                 et_program = _export_standard(
                     model=prep.model,
                     example_input=prep.example_input,
                     dynamic_batch=dynamic_batch,
+                    batch_upper_bound=batch_upper_bound,
+                    partitioner=partitioner,
+                )
+            else:
+                # dynamic-int8 needs no calibration data: one pass over the example input
+                # is enough to observe the weights.
+                calibration_batches = [prep.example_input]
+                if mode == ExecuTorchMode.int8:
+                    calibration_batches = resolve_calibration_batches(
+                        calibration_data=calibration_data,
+                        calibration_steps=calibration_steps,
+                        batch_size=batch_size,
+                        input_size=prep.resolved_input_size,
+                        device=prep.torch_device,
+                        model=prep.model,
+                        calibration_samples=calibration_samples,
+                        random_calibration=random_calibration,
+                        mean=mean,
+                        std=std,
+                        normalize_images=not normalize,
+                    )
+                    verify_input = calibration_batches[0]
+                et_program = _export_quantized(
+                    model=prep.model,
+                    example_input=prep.example_input,
+                    calibration_batches=calibration_batches,
+                    per_channel=per_channel,
+                    is_dynamic=mode == ExecuTorchMode.dynamic_int8,
+                    dynamic_batch=dynamic_batch,
+                    batch_upper_bound=batch_upper_bound,
+                    delegate=delegate,
                     partitioner=partitioner,
                 )
 
@@ -221,7 +273,71 @@ class ExecuTorchBackend(ExportBackend):
                     f"Failed to write ExecuTorch model to {prep.output_path}: {exc}"
                 ) from exc
 
+            if verify:
+                _verify_pte(
+                    prep.output_path,
+                    verify_input,
+                    reference_output(prep.model, verify_input),
+                    delegate=delegate,
+                )
+
         return command
+
+
+def _verify_pte(
+    output_path: Path, runtime_input: torch.Tensor, expected: torch.Tensor, *, delegate: str
+) -> None:
+    if delegate == ExecuTorchDelegate.coreml and platform.system() != "Darwin":
+        console.print("[dim]verify: skipped (the CoreML delegate only runs on macOS)[/dim]")
+        return
+    try:
+        from executorch.runtime import Runtime
+
+        method = Runtime.get().load_program(str(output_path)).load_method("forward")
+        actual = method.execute([runtime_input.contiguous()])[0]
+    except Exception as exc:
+        raise ExportError(f"Saved ExecuTorch model failed verification: {exc}") from exc
+    verify_outputs(expected, torch.as_tensor(actual).cpu().numpy(), backend="ExecuTorch")
+
+
+def _dynamic_shapes(
+    dynamic_batch: bool, batch_upper_bound: int
+) -> tuple[dict[int, torch.export.Dim], ...] | None:
+    if not dynamic_batch:
+        return None
+    return ({0: torch.export.Dim("batch", min=1, max=batch_upper_bound)},)
+
+
+@contextlib.contextmanager
+def _keep_batch_range(
+    exported_program: torch.export.ExportedProgram, dynamic_batch: bool
+) -> Iterator[None]:
+    """Carry the batch range [1, upper bound] intact through ExecuTorch lowering.
+
+    torch.export specializes sizes 0/1 away and records the batch as >= 2, which the CoreML
+    delegate turns into a RangeDim that rejects batch 1. The lowering passes then re-trace
+    convolutions, whose CPU backend heuristics guard on batch < 16; the frozen ShapeEnv ignores
+    the guard but still narrows the range, clamping the memory plan (and so the largest batch the
+    runtime accepts) to 15, or specializing the batch outright when the range collapses.
+    """
+    if not dynamic_batch:
+        yield
+        return
+    from torch.utils._sympy.value_ranges import ValueRanges
+
+    batch = next(
+        node.meta["val"].shape[0]
+        for node in exported_program.graph.nodes
+        if node.op == "placeholder"
+        and isinstance(node.meta.get("val"), torch.Tensor)
+        and node.meta["val"].dim()
+        and isinstance(node.meta["val"].shape[0], torch.SymInt)
+    )
+    shape_env = batch.node.shape_env
+    upper = shape_env.var_to_range[batch.node.expr].upper
+    shape_env.var_to_range[batch.node.expr] = ValueRanges(1, upper)
+    with shape_env.suppress_guards():
+        yield
 
 
 def _export_standard(
@@ -229,28 +345,26 @@ def _export_standard(
     model: torch.nn.Module,
     example_input: torch.Tensor,
     dynamic_batch: bool,
+    batch_upper_bound: int,
     partitioner: list[object],
 ) -> object:
     from executorch.exir import to_edge_transform_and_lower
-
-    dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
-    if dynamic_batch:
-        dynamic_shapes = ({0: torch.export.Dim("batch")},)
 
     try:
         exported_program = torch.export.export(
             model,
             (example_input,),
-            dynamic_shapes=dynamic_shapes,
+            dynamic_shapes=_dynamic_shapes(dynamic_batch, batch_upper_bound),
         )
     except Exception as exc:
         raise ExportError(f"torch.export capture failed: {exc}") from exc
 
     try:
-        et_program = to_edge_transform_and_lower(
-            exported_program,
-            partitioner=partitioner,
-        ).to_executorch()
+        with _keep_batch_range(exported_program, dynamic_batch):
+            et_program = to_edge_transform_and_lower(
+                exported_program,
+                partitioner=partitioner,
+            ).to_executorch()
     except Exception as exc:
         raise ExportError(f"ExecuTorch edge lowering failed: {exc}") from exc
 
@@ -261,39 +375,18 @@ def _export_quantized(
     *,
     model: torch.nn.Module,
     example_input: torch.Tensor,
-    resolved_input_size: tuple[int, int, int],
-    torch_device: torch.device,
-    batch_size: int,
-    calibration_data: Path | None,
-    calibration_steps: int | None,
-    calibration_samples: int | None,
-    random_calibration: bool,
+    calibration_batches: list[torch.Tensor],
     per_channel: bool,
+    is_dynamic: bool,
     dynamic_batch: bool,
+    batch_upper_bound: int,
     delegate: ExecuTorchDelegate,
     partitioner: list[object],
-    mean: tuple[float, ...] | None = None,
-    std: tuple[float, ...] | None = None,
-    normalize_calibration_images: bool = True,
 ) -> object:
     from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
     from torchao.quantization.pt2e import quantize_pt2e
 
-    calibration_batches = resolve_calibration_batches(
-        calibration_data=calibration_data,
-        calibration_steps=calibration_steps,
-        batch_size=batch_size,
-        input_size=resolved_input_size,
-        device=torch_device,
-        model=model,
-        calibration_samples=calibration_samples,
-        random_calibration=random_calibration,
-        mean=mean,
-        std=std,
-        normalize_images=normalize_calibration_images,
-    )
-
-    quantizer = _build_quantizer(delegate=delegate, per_channel=per_channel)
+    quantizer = _build_quantizer(delegate=delegate, per_channel=per_channel, is_dynamic=is_dynamic)
 
     try:
         exported_module = torch.export.export(model, (example_input,)).module()
@@ -309,32 +402,31 @@ def _export_quantized(
     except Exception as exc:
         raise ExportError(f"PT2E quantization failed: {exc}") from exc
 
-    dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
-    if dynamic_batch:
-        dynamic_shapes = ({0: torch.export.Dim("batch")},)
-
     try:
         exported_program = torch.export.export(
             quantized,
             (example_input,),
-            dynamic_shapes=dynamic_shapes,
+            dynamic_shapes=_dynamic_shapes(dynamic_batch, batch_upper_bound),
         )
     except Exception as exc:
         raise ExportError(f"torch.export capture of quantized model failed: {exc}") from exc
 
     try:
-        et_program = to_edge_transform_and_lower(
-            exported_program,
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
-            partitioner=partitioner,
-        ).to_executorch()
+        with _keep_batch_range(exported_program, dynamic_batch):
+            et_program = to_edge_transform_and_lower(
+                exported_program,
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                partitioner=partitioner,
+            ).to_executorch()
     except Exception as exc:
         raise ExportError(f"ExecuTorch edge lowering of quantized model failed: {exc}") from exc
 
     return et_program
 
 
-def _build_quantizer(*, delegate: ExecuTorchDelegate, per_channel: bool) -> object:
+def _build_quantizer(
+    *, delegate: ExecuTorchDelegate, per_channel: bool, is_dynamic: bool = False
+) -> object:
     if delegate == ExecuTorchDelegate.xnnpack:
         try:
             from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
@@ -351,7 +443,7 @@ def _build_quantizer(*, delegate: ExecuTorchDelegate, per_channel: bool) -> obje
         quantizer.set_global(
             get_symmetric_quantization_config(
                 is_per_channel=per_channel,
-                is_dynamic=False,
+                is_dynamic=is_dynamic,
             )
         )
         return quantizer

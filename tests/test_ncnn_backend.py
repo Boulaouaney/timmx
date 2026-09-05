@@ -45,6 +45,13 @@ def _has_float_sequence(output_dir: Path, expected: tuple[float, ...]) -> bool:
     return False
 
 
+def test_rejects_batch_size_other_than_one(tmp_path: Path) -> None:
+    from timmx.errors import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match="--batch-size must be 1"):
+        NcnnBackend().create_command()(**_build_kwargs(tmp_path / "out", batch_size=2))
+
+
 def test_export_ncnn_creates_param_and_bin(tmp_path: Path) -> None:
     output_dir = tmp_path / "ncnn_out"
     kwargs = _build_kwargs(output_dir)

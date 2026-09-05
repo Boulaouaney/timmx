@@ -24,6 +24,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -54,7 +56,7 @@ class TorchScriptBackend(ExportBackend):
             device: DeviceOpt = Device.cpu,
             verify: Annotated[
                 bool,
-                typer.Option(help="Load the saved model after export and run a forward pass."),
+                typer.Option(help="Reload the saved model and compare its output with PyTorch."),
             ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
@@ -93,10 +95,13 @@ class TorchScriptBackend(ExportBackend):
             if verify:
                 try:
                     loaded = torch.jit.load(str(prep.output_path), map_location=prep.torch_device)
-                    loaded(prep.example_input)
+                    with torch.no_grad():
+                        actual = loaded(prep.example_input)
                 except Exception as exc:
                     raise ExportError(
                         f"Saved TorchScript model failed verification: {exc}"
                     ) from exc
+                expected = reference_output(prep.model, prep.example_input)
+                verify_outputs(expected, actual.cpu().numpy(), backend="TorchScript")
 
         return command

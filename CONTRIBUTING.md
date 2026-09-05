@@ -80,5 +80,6 @@ Add the new format to the supported formats table, include usage examples, and c
 - **Choice types**: use `StrEnum` (e.g., `Device`, `LiteRTMode`).
 - **Input size**: `tuple[int, int, int] | None`.
 - **Errors**: raise `TimmxError` subclasses (`ConfigurationError`, `ExportError`) for user-facing failures. The CLI catches these and exits with code 2.
+- **Verification**: expose `--verify/--no-verify` (default on). After writing the artifact, reload it with the target runtime, run the sample input (or the first calibration batch for int8) and pass the result to `verify_outputs()` from `common.py`, which compares against `reference_output()` and raises `ExportError` on divergence.
 - **Typing**: Python `>=3.11` built-in syntax only (`list[str]`, `A | B`). No `typing` imports unless strictly necessary.
 - **Line length**: 100 characters.

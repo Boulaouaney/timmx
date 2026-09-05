@@ -22,6 +22,8 @@ from timmx.export.common import (
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -63,7 +65,9 @@ class OpenVINOBackend(ExportBackend):
             ] = True,
             verify: Annotated[
                 bool,
-                typer.Option(help="Reload the saved IR, compile it on CPU and run a forward pass."),
+                typer.Option(
+                    help="Reload the saved IR on CPU and compare its output with PyTorch."
+                ),
             ] = True,
             normalize: NormalizeOpt = False,
             softmax: SoftmaxOpt = False,
@@ -109,9 +113,12 @@ class OpenVINOBackend(ExportBackend):
             if verify:
                 try:
                     compiled = ov.Core().compile_model(str(prep.output_path), "CPU")
-                    compiled(prep.example_input.cpu().numpy())
+                    actual = compiled(prep.example_input.cpu().numpy())[0]
                 except Exception as exc:
                     raise ExportError(f"Saved OpenVINO model failed verification: {exc}") from exc
+                verify_outputs(
+                    reference_output(prep.model, prep.example_input), actual, backend="OpenVINO"
+                )
 
         return command
 
