@@ -25,7 +25,7 @@ An extensible CLI and Python package for exporting [timm](https://github.com/hug
 
 ## Installation
 
-Core install (includes `timm`, `torch`, `typer`, `rich`):
+Core install (includes `timm`, `torch`, `typer`, `rich`, `numpy`):
 
 ```bash
 pip install timmx
