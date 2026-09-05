@@ -21,7 +21,7 @@ Current built-in backends:
 ## Development Commands
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --group dev  # install extras + pytest
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev  # install extras + pytest
 uv run pytest                               # all tests
 uv run pytest tests/test_cli.py::test_name  # one test
 uvx ruff format . && uvx ruff check .       # format + lint (import sorting included)
@@ -199,7 +199,7 @@ Runtime nuance:
 Run these from repo root:
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --group dev
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev
 uvx ruff format .
 uvx ruff check .
 uv run pytest

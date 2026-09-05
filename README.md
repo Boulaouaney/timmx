@@ -65,7 +65,7 @@ timmx doctor
 ## Quick Start
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --group dev
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev
 uv run timmx doctor
 uv run timmx --help
 ```
@@ -579,7 +579,7 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 ## Development
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --group dev  # install extras + pytest
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev  # install extras + pytest
 uvx ruff format .                                              # format
 uvx ruff check .                                               # lint
 uv run pytest                                                  # test
