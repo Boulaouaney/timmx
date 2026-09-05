@@ -244,7 +244,11 @@ def wrap_with_preprocessing(
 
 
 def verify_outputs(expected: torch.Tensor, actual: object, *, backend: str) -> None:
-    """Compare an exported model's output with the PyTorch output; fail on gross divergence."""
+    """Compare an exported model's output with the PyTorch output; fail on gross divergence.
+
+    Compares a single output tensor (backends pass the first output); the cosine similarity is
+    computed per sample over the flattened output and averaged over the batch.
+    """
     reference = expected.detach().float().cpu().flatten(1).numpy()
     try:
         produced = np.asarray(actual, dtype=np.float32).reshape(reference.shape)

@@ -173,7 +173,7 @@ class ExecuTorchBackend(ExportBackend):
                 if dynamic_batch:
                     raise ConfigurationError(
                         "--mode dynamic-int8 does not support --dynamic-batch "
-                        "(per-token quantization specializes the batch dimension)."
+                        "(dynamic activation quantization specializes the batch dimension)."
                     )
             if compute_precision is not None and delegate != ExecuTorchDelegate.coreml:
                 raise ConfigurationError(
@@ -319,6 +319,9 @@ def _keep_batch_range(
     convolutions, whose CPU backend heuristics guard on batch < 16; the frozen ShapeEnv ignores
     the guard but still narrows the range, clamping the memory plan (and so the largest batch the
     runtime accepts) to 15, or specializing the batch outright when the range collapses.
+
+    This touches torch's ShapeEnv internals; test_export_xnnpack_dynamic_batch runs the exported
+    program at the upper bound and is the regression check for torch upgrades.
     """
     if not dynamic_batch:
         yield
@@ -326,13 +329,18 @@ def _keep_batch_range(
     from torch.utils._sympy.value_ranges import ValueRanges
 
     batch = next(
-        node.meta["val"].shape[0]
-        for node in exported_program.graph.nodes
-        if node.op == "placeholder"
-        and isinstance(node.meta.get("val"), torch.Tensor)
-        and node.meta["val"].dim()
-        and isinstance(node.meta["val"].shape[0], torch.SymInt)
+        (
+            node.meta["val"].shape[0]
+            for node in exported_program.graph.nodes
+            if node.op == "placeholder"
+            and isinstance(node.meta.get("val"), torch.Tensor)
+            and node.meta["val"].dim()
+            and isinstance(node.meta["val"].shape[0], torch.SymInt)
+        ),
+        None,
     )
+    if batch is None:
+        raise ExportError("torch.export did not keep the batch dimension symbolic.")
     shape_env = batch.node.shape_env
     upper = shape_env.var_to_range[batch.node.expr].upper
     shape_env.var_to_range[batch.node.expr] = ValueRanges(1, upper)

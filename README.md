@@ -427,7 +427,7 @@ uv run timmx export executorch resnet18 \
   --output ./artifacts/resnet18_int8.pte
 ```
 
-Dynamic INT8 (int8 weights, activations quantized per batch at runtime; no calibration data).
+Dynamic INT8 (int8 weights, activations quantized on the fly at runtime; no calibration data).
 This is the mode to use for transformer models, where static INT8 loses accuracy:
 
 ```bash
