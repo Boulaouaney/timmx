@@ -208,7 +208,7 @@ uv build
 
 ## Dependencies
 
-Core dependencies (`timm`, `torch`, `typer`, `rich`) are in `[project.dependencies]`. Backend-specific
+Core dependencies (`timm`, `torch`, `typer`, `rich`, `numpy`) are in `[project.dependencies]`. Backend-specific
 deps are optional extras in `[project.optional-dependencies]`: `onnx`, `openvino`, `coreml`, `coreai`,
 `litert`, `ncnn`, `executorch`.
 TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
