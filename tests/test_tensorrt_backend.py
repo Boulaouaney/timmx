@@ -48,9 +48,9 @@ def _build_kwargs(
     calibration_data: Path | None = None,
     calibration_steps: int | None = None,
     calibration_samples: int | None = None,
-    calibration_cache: Path | None = None,
     random_calibration: bool = False,
     keep_onnx: bool = False,
+    verify: bool = False,
     verbose: bool = False,
     normalize: bool = False,
     softmax: bool = False,
@@ -76,9 +76,9 @@ def _build_kwargs(
         "calibration_data": calibration_data,
         "calibration_steps": calibration_steps,
         "calibration_samples": calibration_samples,
-        "calibration_cache": calibration_cache,
         "random_calibration": random_calibration,
         "keep_onnx": keep_onnx,
+        "verify": verify,
         "verbose": verbose,
         "normalize": normalize,
         "softmax": softmax,
@@ -109,7 +109,6 @@ class _FakeLogger:
 class _FakeConfig:
     def __init__(self) -> None:
         self.flags: list[object] = []
-        self.int8_calibrator: object | None = None
         self.profiles: list[object] = []
         self.workspace_limit: tuple[object, int] | None = None
 
@@ -171,17 +170,10 @@ class _FakeTRT:
     OnnxParser = _FakeParser
 
     class NetworkDefinitionCreationFlag:
-        EXPLICIT_BATCH = 0
+        STRONGLY_TYPED = 0
 
     class MemoryPoolType:
         WORKSPACE = "workspace"
-
-    class BuilderFlag:
-        FP16 = "fp16"
-        INT8 = "int8"
-
-    class IInt8MinMaxCalibrator:
-        pass
 
 
 def _patch_fake_runtime(
@@ -228,6 +220,10 @@ def _patch_fake_runtime(
     monkeypatch.setattr("timmx.export.tensorrt_backend._require_onnxscript", lambda: None)
     monkeypatch.setattr("timmx.export.tensorrt_backend.prepare_export", fake_prepare_export)
     monkeypatch.setattr(torch.onnx, "export", fake_onnx_export)
+    monkeypatch.setattr(
+        "timmx.export.tensorrt_backend._quantize_int8",
+        lambda model, _example_input, _batches, _dynamic_shapes: model,
+    )
 
 
 @pytest.fixture()
@@ -367,8 +363,8 @@ def test_tensorrt_int8_allows_mean_std_for_calibration_without_wrapper_flags(
         capture_prepare=prepare_kwargs,
     )
     monkeypatch.setattr(
-        "timmx.export.tensorrt_backend._create_calibrator",
-        lambda **kwargs: calibrator_kwargs.update(kwargs) or object(),
+        "timmx.export.tensorrt_backend.resolve_calibration_batches",
+        lambda **kwargs: calibrator_kwargs.update(kwargs) or [torch.rand(2, 3, 16, 16)],
     )
 
     TensorRTBackend().create_command()(
@@ -406,8 +402,8 @@ def test_tensorrt_int8_wrapper_disables_image_normalization_for_calibration(
         capture_prepare=prepare_kwargs,
     )
     monkeypatch.setattr(
-        "timmx.export.tensorrt_backend._create_calibrator",
-        lambda **kwargs: calibrator_kwargs.update(kwargs) or object(),
+        "timmx.export.tensorrt_backend.resolve_calibration_batches",
+        lambda **kwargs: calibrator_kwargs.update(kwargs) or [torch.rand(2, 3, 16, 16)],
     )
 
     TensorRTBackend().create_command()(
@@ -442,8 +438,8 @@ def test_tensorrt_int8_softmax_only_keeps_image_normalization_for_calibration(
         batch_size=2,
     )
     monkeypatch.setattr(
-        "timmx.export.tensorrt_backend._create_calibrator",
-        lambda **kwargs: calibrator_kwargs.update(kwargs) or object(),
+        "timmx.export.tensorrt_backend.resolve_calibration_batches",
+        lambda **kwargs: calibrator_kwargs.update(kwargs) or [torch.rand(2, 3, 16, 16)],
     )
 
     TensorRTBackend().create_command()(
@@ -545,7 +541,7 @@ requires_onnxscript = pytest.mark.skipif(
 @requires_onnxscript
 def test_export_tensorrt_fp32(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
-    kwargs = _build_kwargs(output_path, mode="fp32")
+    kwargs = _build_kwargs(output_path, verify=True, mode="fp32")
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = TensorRTBackend()
@@ -561,7 +557,7 @@ def test_export_tensorrt_fp32(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 @requires_onnxscript
 def test_export_tensorrt_fp16(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
-    kwargs = _build_kwargs(output_path, mode="fp16")
+    kwargs = _build_kwargs(output_path, verify=True, mode="fp16")
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = TensorRTBackend()
@@ -579,6 +575,7 @@ def test_export_tensorrt_dynamic_batch(tmp_path: Path, monkeypatch: pytest.Monke
     output_path = tmp_path / "model.engine"
     kwargs = _build_kwargs(
         output_path,
+        verify=True,
         mode="fp32",
         dynamic_batch=True,
         batch_size=2,
@@ -600,7 +597,7 @@ def test_export_tensorrt_dynamic_batch(tmp_path: Path, monkeypatch: pytest.Monke
 @requires_onnxscript
 def test_export_tensorrt_int8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
-    kwargs = _build_kwargs(output_path, mode="int8", random_calibration=True)
+    kwargs = _build_kwargs(output_path, verify=True, mode="int8", random_calibration=True)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = TensorRTBackend()
@@ -616,7 +613,7 @@ def test_export_tensorrt_int8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 @requires_onnxscript
 def test_export_tensorrt_keep_onnx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_path = tmp_path / "model.engine"
-    kwargs = _build_kwargs(output_path, keep_onnx=True)
+    kwargs = _build_kwargs(output_path, verify=True, keep_onnx=True)
     _patch_model_helpers(monkeypatch, _ConvModel().eval())
 
     backend = TensorRTBackend()

@@ -332,7 +332,13 @@ uv run timmx export ncnn resnet18 \
 
 ### TensorRT
 
-Requires an NVIDIA GPU with CUDA and the `tensorrt` package (`pip install tensorrt`).
+Requires an NVIDIA GPU with CUDA, TensorRT 10 or newer (`pip install tensorrt`) and the `onnx`
+extra. Engines are built as strongly typed networks: `fp16` runs the whole graph in half precision
+behind fp32 inputs/outputs, and `int8` inserts explicit Q/DQ quantization (symmetric int8, per-channel
+weights) on every conv/linear layer, which needs `pip install torchao`. The engine is run once after
+the build and compared with PyTorch. Static int8 suits convolutional networks (ResNet-18 keeps a
+cosine similarity of 0.9997 to PyTorch); transformer activations quantize poorly this way
+(ViT-Tiny drops to 0.92), so prefer `fp16` for those.
 
 ```bash
 uv run timmx export tensorrt resnet18 \
@@ -361,9 +367,6 @@ uv run timmx export tensorrt resnet18 \
   --mean 0.5 0.5 0.5 --std 0.5 0.5 0.5 \
   --output ./artifacts/resnet18_int8.engine
 ```
-
-Pass `--calibration-cache ./resnet18.cache` to save the INT8 calibration table and reuse it on
-later builds of the same model; without the flag every export calibrates from scratch.
 
 Dynamic batch size:
 
