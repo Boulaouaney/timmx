@@ -438,6 +438,8 @@ def _quantize_int8(
     targets = {torch.ops.aten.conv2d.default, torch.ops.aten.linear.default}
 
     class _TensorRTQuantizer(Quantizer):
+        annotated = 0
+
         def annotate(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
             for node in graph_module.graph.nodes:
                 if node.op == "call_function" and node.target in targets:
@@ -445,6 +447,7 @@ def _quantize_int8(
                         input_qspec_map={node.args[0]: activation, node.args[1]: weight},
                         _annotated=True,
                     )
+                    self.annotated += 1
             return graph_module
 
         def validate(self, graph_module: torch.fx.GraphModule) -> None:
@@ -456,7 +459,14 @@ def _quantize_int8(
         exported = torch.export.export(
             model, (example_input,), dynamic_shapes=dynamic_shapes
         ).module()
-        prepared = quantize_pt2e.prepare_pt2e(exported, _TensorRTQuantizer())
+        quantizer = _TensorRTQuantizer()
+        prepared = quantize_pt2e.prepare_pt2e(exported, quantizer)
+        if not quantizer.annotated:
+            # A torch upgrade that lowers conv2d/linear further would otherwise leave the graph
+            # unquantized and produce an fp32 engine under --mode int8.
+            raise ExportError(
+                "No conv2d/linear operators were found to quantize in the exported graph."
+            )
         with torch.no_grad():
             for batch in calibration_batches:
                 prepared(batch)
@@ -464,6 +474,8 @@ def _quantize_int8(
         quantized.training = False
         # The ONNX exporter keeps dynamic shapes from an ExportedProgram, not a GraphModule.
         return torch.export.export(quantized, (example_input,), dynamic_shapes=dynamic_shapes)
+    except ExportError:
+        raise
     except Exception as exc:
         raise ExportError(f"PT2E quantization failed: {exc}") from exc
 
