@@ -33,9 +33,10 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-      # coremltools has no Python 3.14 or Windows wheels yet; coreai-core additionally builds
-      # only for manylinux x86_64 and macOS 26+ arm64, so it is exercised on Linux here.
-      - run: uv sync --group dev --extra onnx --extra openvino --extra ncnn ${{ (matrix.python-version != '3.14' && matrix.os != 'windows-latest') && '--extra coreml' || '' }} ${{ (matrix.python-version != '3.14' && matrix.os == 'ubuntu-latest') && '--extra coreai' || '' }}
+      # Neither coremltools nor coreai-core has Python 3.14 or Windows wheels. coreai-core builds
+      # for manylinux x86_64 and macOS 26+ arm64, which macos-latest now is, so the macOS job also
+      # covers the Core AI runtime tests (they skip off-Darwin).
+      - run: uv sync --group dev --extra onnx --extra openvino --extra ncnn ${{ (matrix.python-version != '3.14' && matrix.os != 'windows-latest') && '--extra coreml --extra coreai' || '' }}
       - run: uv run pytest
 
   build:
