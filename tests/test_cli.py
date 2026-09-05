@@ -131,6 +131,7 @@ def test_export_litert_help_shows_options() -> None:
 def test_export_tensorrt_help_shows_options() -> None:
     result = runner.invoke(app, ["export", "tensorrt", "--help"])
     assert result.exit_code == 0
+    assert "--verify" in _plain(result.output)
     assert "--output" in _plain(result.output)
     assert "--mode" in _plain(result.output)
     assert "--workspace" in _plain(result.output)

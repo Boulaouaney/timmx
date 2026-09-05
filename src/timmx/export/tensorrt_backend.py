@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import tempfile
 from collections.abc import Callable
 from enum import StrEnum
@@ -23,10 +24,13 @@ from timmx.export.common import (
     NormalizeOpt,
     NumClassesOpt,
     OutputOpt,
+    PrePostWrapper,
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
     prepare_export,
+    reference_output,
+    verify_outputs,
 )
 from timmx.export.types import Device
 
@@ -77,7 +81,14 @@ class TensorRTBackend(ExportBackend):
             input_size: InputSizeOpt = None,
             device: DeviceOpt = Device.cuda,
             mode: Annotated[
-                TensorRTMode, typer.Option(help="Engine precision mode.")
+                TensorRTMode,
+                typer.Option(
+                    help=(
+                        "Engine precision: fp32, fp16 (graph cast to half behind fp32 I/O) or "
+                        "int8 (explicit Q/DQ quantization of conv/linear layers, needs "
+                        "calibration data and torchao)."
+                    )
+                ),
             ] = TensorRTMode.fp32,
             workspace: Annotated[
                 int, typer.Option(help="Maximum workspace memory in GiB.")
@@ -136,16 +147,16 @@ class TensorRTBackend(ExportBackend):
                     ),
                 ),
             ] = False,
-            calibration_cache: Annotated[
-                Path | None,
-                typer.Option(help="Path to read/write TensorRT INT8 calibration cache."),
-            ] = None,
             keep_onnx: Annotated[
                 bool,
                 typer.Option(
                     "--keep-onnx", help="Keep the intermediate ONNX file alongside the engine."
                 ),
             ] = False,
+            verify: Annotated[
+                bool,
+                typer.Option(help="Run the built engine on the GPU and compare with PyTorch."),
+            ] = True,
             verbose: Annotated[
                 bool, typer.Option(help="Enable verbose TensorRT builder logging.")
             ] = False,
@@ -176,13 +187,11 @@ class TensorRTBackend(ExportBackend):
                 calibration_data is not None
                 or calibration_steps is not None
                 or calibration_samples is not None
-                or calibration_cache is not None
                 or random_calibration
             ):
                 raise ConfigurationError(
                     "--calibration-data, --calibration-steps, --calibration-samples, "
-                    "--calibration-cache, and --random-calibration "
-                    "are only valid with --mode int8."
+                    "and --random-calibration are only valid with --mode int8."
                 )
 
             if dynamic_batch:
@@ -227,6 +236,37 @@ class TensorRTBackend(ExportBackend):
 
             _require_onnxscript()
 
+            # Strongly typed TensorRT networks take their precision from the graph, so fp16 and
+            # int8 are expressed in the ONNX model rather than with builder flags (removed in
+            # TensorRT 11 together with implicit int8 calibration).
+            dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
+            if dynamic_batch:
+                batch_dim = torch.export.Dim("batch", min=batch_min, max=batch_max)
+                dynamic_shapes = ({0: batch_dim},)
+
+            export_model: torch.nn.Module | torch.export.ExportedProgram = prep.model
+            verify_input = prep.example_input
+            if mode == TensorRTMode.fp16:
+                export_model = _half_model(prep.model)
+            elif mode == TensorRTMode.int8:
+                calibration_batches = resolve_calibration_batches(
+                    calibration_data=calibration_data,
+                    calibration_steps=calibration_steps,
+                    batch_size=batch_size,
+                    input_size=prep.resolved_input_size,
+                    device=prep.torch_device,
+                    model=prep.model,
+                    calibration_samples=calibration_samples,
+                    random_calibration=random_calibration,
+                    mean=mean,
+                    std=std,
+                    normalize_images=not normalize,
+                )
+                verify_input = calibration_batches[0]
+                export_model = _quantize_int8(
+                    prep.model, prep.example_input, calibration_batches, dynamic_shapes
+                )
+
             export_kwargs: dict[str, object] = {
                 "opset_version": opset,
                 "input_names": ["input"],
@@ -234,13 +274,12 @@ class TensorRTBackend(ExportBackend):
                 "dynamo": True,
                 "external_data": False,
             }
-            if dynamic_batch:
-                batch_dim = torch.export.Dim("batch", min=batch_min, max=batch_max)
-                export_kwargs["dynamic_shapes"] = ({0: batch_dim},)
+            if dynamic_shapes is not None and mode != TensorRTMode.int8:
+                export_kwargs["dynamic_shapes"] = dynamic_shapes
 
             try:
                 torch.onnx.export(
-                    prep.model,
+                    export_model,
                     (prep.example_input,),
                     f=str(onnx_path),
                     **export_kwargs,
@@ -254,7 +293,7 @@ class TensorRTBackend(ExportBackend):
                 logger = trt.Logger(trt.Logger.VERBOSE if verbose else trt.Logger.WARNING)
                 builder = trt.Builder(logger)
                 network = builder.create_network(
-                    1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+                    1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
                 )
                 parser = trt.OnnxParser(network, logger)
 
@@ -266,27 +305,6 @@ class TensorRTBackend(ExportBackend):
 
                 config = builder.create_builder_config()
                 config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace * (1 << 30))
-
-                if mode == TensorRTMode.fp16:
-                    config.set_flag(trt.BuilderFlag.FP16)
-                elif mode == TensorRTMode.int8:
-                    config.set_flag(trt.BuilderFlag.INT8)
-                    calibrator = _create_calibrator(
-                        trt=trt,
-                        calibration_data=calibration_data,
-                        calibration_steps=calibration_steps,
-                        calibration_cache=calibration_cache,
-                        batch_size=batch_size,
-                        input_size=prep.resolved_input_size,
-                        device=prep.torch_device,
-                        model=prep.model,
-                        calibration_samples=calibration_samples,
-                        random_calibration=random_calibration,
-                        mean=mean,
-                        std=std,
-                        normalize_images=not normalize,
-                    )
-                    config.int8_calibrator = calibrator
 
                 if dynamic_batch:
                     profile = builder.create_optimization_profile()
@@ -315,74 +333,151 @@ class TensorRTBackend(ExportBackend):
                     f"Failed to write TensorRT engine to {prep.output_path}: {exc}"
                 ) from exc
 
+            if verify:
+                _verify_engine(
+                    trt,
+                    prep.output_path,
+                    verify_input,
+                    reference_output(prep.model, verify_input),
+                )
+
         return command
 
 
-def _make_calibrator_class(trt: object) -> type:
-    class _Calibrator(trt.IInt8MinMaxCalibrator):
-        def __init__(self, batches: list[torch.Tensor], cache_path: Path | None) -> None:
-            super().__init__()
-            self._batches = batches
-            self._batch_iter = iter(batches)
-            self._batch_size = batches[0].shape[0]
-            self._cache_path = cache_path
-            self._current_batch: torch.Tensor | None = None
-
-        def get_batch_size(self) -> int:
-            return self._batch_size
-
-        def get_batch(self, names: list[str]) -> list[int] | None:
-            try:
-                batch = next(self._batch_iter)
-                self._current_batch = batch.cuda().contiguous()
-                return [self._current_batch.data_ptr()]
-            except StopIteration:
-                return None
-
-        def read_calibration_cache(self) -> bytes | None:
-            if self._cache_path is not None and self._cache_path.exists():
-                return self._cache_path.read_bytes()
-            return None
-
-        def write_calibration_cache(self, cache: bytes) -> None:
-            if self._cache_path is not None:
-                self._cache_path.write_bytes(cache)
-
-    return _Calibrator
+def _verify_engine(
+    trt: object, engine_path: Path, runtime_input: torch.Tensor, expected: torch.Tensor
+) -> None:
+    try:
+        runtime = trt.Runtime(trt.Logger(trt.Logger.WARNING))
+        engine = runtime.deserialize_cuda_engine(engine_path.read_bytes())
+        context = engine.create_execution_context()
+        x = runtime_input.cuda().contiguous()
+        context.set_input_shape("input", tuple(x.shape))
+        output_shape = tuple(context.get_tensor_shape("output"))
+        y = torch.empty(output_shape, dtype=torch.float32, device="cuda")
+        context.set_tensor_address("input", x.data_ptr())
+        context.set_tensor_address("output", y.data_ptr())
+        stream = torch.cuda.current_stream()
+        if not context.execute_async_v3(stream.cuda_stream):
+            raise RuntimeError("execute_async_v3 returned False")
+        stream.synchronize()
+    except Exception as exc:
+        raise ExportError(f"Saved TensorRT engine failed verification: {exc}") from exc
+    verify_outputs(expected, y.cpu().numpy(), backend="TensorRT")
 
 
-def _create_calibrator(
-    *,
-    trt: object,
-    calibration_data: Path | None,
-    calibration_steps: int | None,
-    calibration_cache: Path | None,
-    batch_size: int,
-    input_size: tuple[int, int, int],
-    device: torch.device,
+class _HalfIO(torch.nn.Module):
+    """Run the model in fp16 behind fp32 inputs and outputs."""
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model.half()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x.half()).float()
+
+
+def _half_model(model: torch.nn.Module) -> torch.nn.Module:
+    """Cast the network to fp16, keeping --normalize/--softmax pre/post-processing in fp32.
+
+    A strongly typed engine runs softmax in fp16 if the graph says so, and exp() of real logits
+    overflows half precision (probabilities came out with cosine 0.79 against PyTorch).
+    """
+    model = copy.deepcopy(model)
+    if isinstance(model, PrePostWrapper):
+        model.model = _HalfIO(model.model)
+        return model
+    return _HalfIO(model)
+
+
+def _quantize_int8(
     model: torch.nn.Module,
-    calibration_samples: int | None,
-    random_calibration: bool,
-    mean: tuple[float, ...] | None = None,
-    std: tuple[float, ...] | None = None,
-    normalize_images: bool = True,
-) -> object:
-    batches = resolve_calibration_batches(
-        calibration_data=calibration_data,
-        calibration_steps=calibration_steps,
-        batch_size=batch_size,
-        input_size=input_size,
-        device=device,
-        model=model,
-        calibration_samples=calibration_samples,
-        random_calibration=random_calibration,
-        mean=mean,
-        std=std,
-        normalize_images=normalize_images,
+    example_input: torch.Tensor,
+    calibration_batches: list[torch.Tensor],
+    dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None,
+) -> torch.export.ExportedProgram:
+    """PT2E static int8 in the shape TensorRT's ONNX parser accepts.
+
+    Symmetric (zero point 0) per-tensor activations (histogram-calibrated ranges, which survive
+    activation outliers far better than min/max) and per-channel weights, quantized on the
+    inputs of conv/linear layers only: TensorRT rejects asymmetric int8 and fuses conv+relu+pool
+    itself, which a Q/DQ pair on the conv output would break ("could not find any implementation").
+    """
+    try:
+        from torchao.quantization.pt2e import quantize_pt2e
+        from torchao.quantization.pt2e.observer import (
+            HistogramObserver,
+            PerChannelMinMaxObserver,
+        )
+        from torchao.quantization.pt2e.quantizer import (
+            QuantizationAnnotation,
+            QuantizationSpec,
+            Quantizer,
+        )
+    except ImportError as exc:
+        raise ExportError(
+            "torchao is required for --mode int8 (explicit Q/DQ quantization). "
+            "Install with: pip install torchao"
+        ) from exc
+
+    activation = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-128,
+        quant_max=127,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
     )
-    # No implicit cache file: a stale cache from another model would silently be reused.
-    calibrator_cls = _make_calibrator_class(trt)
-    return calibrator_cls(batches=batches, cache_path=calibration_cache)
+    weight = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-127,
+        quant_max=127,
+        qscheme=torch.per_channel_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(eps=2**-12),
+    )
+    targets = {torch.ops.aten.conv2d.default, torch.ops.aten.linear.default}
+
+    class _TensorRTQuantizer(Quantizer):
+        annotated = 0
+
+        def annotate(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+            for node in graph_module.graph.nodes:
+                if node.op == "call_function" and node.target in targets:
+                    node.meta["quantization_annotation"] = QuantizationAnnotation(
+                        input_qspec_map={node.args[0]: activation, node.args[1]: weight},
+                        _annotated=True,
+                    )
+                    self.annotated += 1
+            return graph_module
+
+        def validate(self, graph_module: torch.fx.GraphModule) -> None:
+            pass
+
+    # Capture with the batch symbol from the start: a module from a static export asserts the
+    # traced batch size, which specializes a later dynamic re-export.
+    try:
+        exported = torch.export.export(
+            model, (example_input,), dynamic_shapes=dynamic_shapes
+        ).module()
+        quantizer = _TensorRTQuantizer()
+        prepared = quantize_pt2e.prepare_pt2e(exported, quantizer)
+        if not quantizer.annotated:
+            # A torch upgrade that lowers conv2d/linear further would otherwise leave the graph
+            # unquantized and produce an fp32 engine under --mode int8.
+            raise ExportError(
+                "No conv2d/linear operators were found to quantize in the exported graph."
+            )
+        with torch.no_grad():
+            for batch in calibration_batches:
+                prepared(batch)
+        quantized = quantize_pt2e.convert_pt2e(prepared)
+        quantized.training = False
+        # The ONNX exporter keeps dynamic shapes from an ExportedProgram, not a GraphModule.
+        return torch.export.export(quantized, (example_input,), dynamic_shapes=dynamic_shapes)
+    except ExportError:
+        raise
+    except Exception as exc:
+        raise ExportError(f"PT2E quantization failed: {exc}") from exc
 
 
 def _require_onnxscript() -> None:
@@ -403,4 +498,8 @@ def _import_tensorrt() -> object:
             "tensorrt is required for TensorRT export. "
             "Install with: pip install tensorrt (requires CUDA)"
         ) from exc
+    if not hasattr(trt.NetworkDefinitionCreationFlag, "STRONGLY_TYPED"):
+        raise ExportError(
+            f"TensorRT >= 10 is required (found {getattr(trt, '__version__', 'unknown')})."
+        )
     return trt

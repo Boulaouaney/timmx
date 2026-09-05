@@ -83,7 +83,8 @@ Runtime nuance:
   `onnxruntime` (in the `onnx` extra), `ncnn` with the `ncnn` package (in the `ncnn` extra),
   `executorch` with `executorch.runtime` (CoreML delegate: macOS only, skipped elsewhere),
   `coreml` by prediction on macOS (metadata-only elsewhere), `litert` with the LiteRT
-  interpreter (quantizing int8 inputs/outputs with the model's scale/zero point).
+  interpreter (quantizing int8 inputs/outputs with the model's scale/zero point), `tensorrt` by
+  deserializing the engine and running it with torch CUDA buffers (`execute_async_v3`).
 - For `coreml`, `--source` selects model capture: `torch-export` (default,
   `torch.export.export()` → `run_decompositions({})` → `ct.convert()`) or `trace`
   (`torch.jit.trace`). Trace fails on ViT/DeiT/Swin with coremltools 9 + torch 2.13, torch-export
@@ -125,11 +126,21 @@ Runtime nuance:
   Requires `pip install 'timmx[ncnn]'` (installs `pnnx` for conversion and `ncnn` for verification).
   ncnn has no batch dimension: `--batch-size` must be `1`, and pnnx cannot convert batch-dependent
   reshapes (ViT attention) — such exports fail verification (the error appends a hint).
-- For `tensorrt`, `--device cuda`, `pip install tensorrt`, and `onnxscript` (via `pip install 'timmx[onnx]'`)
-  are required. TensorRT export uses dynamo-based ONNX as an intermediate step.
-- For `tensorrt`, ONNX intermediate export uses `external_data=False` to embed weights inline.
-  The INT8 calibration table is only read/written when `--calibration-cache` is given (an implicit
-  cache file would silently reuse another model's table).
+- For `tensorrt`, `--device cuda`, TensorRT `>= 10` (`pip install tensorrt`; 11 is what PyPI
+  serves) and `onnxscript` (via `pip install 'timmx[onnx]'`) are required. TensorRT export uses
+  dynamo-based ONNX as an intermediate step (`external_data=False` to embed weights inline).
+- For `tensorrt`, networks are built strongly typed (`NetworkDefinitionCreationFlag.STRONGLY_TYPED`),
+  so precision comes from the graph: TensorRT 11 removed `EXPLICIT_BATCH`, the `FP16`/`INT8` builder
+  flags and every `IInt8*Calibrator`. `--mode fp16` wraps a deep copy of the model in `_HalfIO`
+  (`model.half()` behind fp32 I/O); `--mode int8` runs PT2E static quantization with the built-in
+  `_TensorRTQuantizer` (needs `torchao`): symmetric int8 per-tensor activations and per-channel
+  weights on the *inputs* of `aten.conv2d`/`aten.linear` only. Zero points must be 0 and quantizing
+  conv outputs breaks TensorRT's conv+relu+pool fusion ("could not find any implementation").
+  The ONNX then carries QuantizeLinear/DequantizeLinear nodes (opset 18). There is no calibration
+  cache. Static int8 is fine for CNNs (resnet18 cos 0.9997, mobilenetv4 0.9999) but poor for
+  transformers (vit_tiny cos 0.92 with both MinMax and Histogram activation observers); `fp16`
+  keeps the softmax/normalization wrapper in fp32 (`_half_model`) because fp16 softmax overflows.
+  Verification deserializes the engine and runs it with torch CUDA buffers.
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
 - For `executorch`, delegates are selected via `--delegate xnnpack` (default) or `--delegate coreml`.
