@@ -33,12 +33,16 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-      # executorch has wheels for every cell of the matrix. Neither coremltools nor coreai-core has
-      # Python 3.14 or Windows wheels; coreai-core builds for manylinux x86_64 and macOS 26+ arm64,
-      # which macos-latest now is, so the macOS job also covers the Core AI runtime tests (they skip
-      # off-Darwin, as do the ExecuTorch CoreML-delegate tests wherever coremltools is absent).
-      - run: uv sync --group dev --extra onnx --extra openvino --extra ncnn --extra executorch ${{ (matrix.python-version != '3.14' && matrix.os != 'windows-latest') && '--extra coreml --extra coreai' || '' }}
-      - run: uv run pytest
+      # executorch has wheels for every cell of the matrix. coremltools, coreai-core and the litert
+      # chain (litert-converter, ai-edge-tensorflow) have no Python 3.14 or Windows wheels;
+      # coreai-core builds for manylinux x86_64 and macOS 26+ arm64, which macos-latest now is, so
+      # the macOS job also covers the Core AI runtime tests (they skip off-Darwin, as do the
+      # ExecuTorch CoreML-delegate tests wherever coremltools is absent).
+      - run: uv sync --locked --group dev --extra onnx --extra openvino --extra ncnn --extra executorch ${{ (matrix.python-version != '3.14' && matrix.os != 'windows-latest') && '--extra coreml --extra coreai --extra litert' || '' }}
+      - run: uv run pytest --ignore=tests/test_litert_backend.py
+      # The litert static-int8 tests need their own process (see the caveat in AGENTS.md).
+      - if: matrix.python-version != '3.14' && matrix.os != 'windows-latest'
+        run: uv run pytest tests/test_litert_backend.py
 
   build:
     runs-on: ubuntu-latest

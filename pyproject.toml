@@ -39,7 +39,7 @@ dependencies = [
   "numpy",
   "rich",
   "timm",
-  "torch>=2.9",
+  "torch>=2.13",
   "typer",
 ]
 
@@ -47,10 +47,10 @@ dependencies = [
 coreai = ["coreai-torch>=0.4.2"]
 coreml = ["coremltools>=9.0", "scikit-learn"]
 executorch = ["executorch>=1.4"]
-litert = ["litert-torch>=0.9"]
+litert = ["litert-torch>=0.9.4"]
 ncnn = ["ncnn", "pnnx"]
-onnx = ["onnx>=1.16", "onnxruntime", "onnxscript", "onnxslim"]
-openvino = ["openvino>=2025.0"]
+onnx = ["onnx>=1.21", "onnxruntime>=1.29", "onnxscript>=0.7", "onnxslim"]
+openvino = ["openvino>=2026.3"]
 
 [project.scripts]
 timmx = "timmx.cli:main"
@@ -72,6 +72,14 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "timmx"
 module-root = "src"
+
+[tool.uv]
+# Dev/CI resolve every extra at once, and litert-torch's conservative pins (torch<2.14, and
+# typing-extensions<4.13 via xdsl, which blocks onnx>=1.22) would hold the whole project one
+# release back. Both are lifted here so CI tests the latest of everything; the suite passes with
+# litert-torch on the overridden versions. Published metadata is untouched, so pip users still get
+# whatever litert-torch allows.
+override-dependencies = ["torch", "typing-extensions"]
 
 
 [tool.ruff]
