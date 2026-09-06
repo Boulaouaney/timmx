@@ -21,7 +21,7 @@ Current built-in backends:
 ## Development Commands
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev  # install extras + pytest
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --extra litert --group dev  # install extras + pytest
 uv run pytest                               # all tests
 uv run pytest tests/test_cli.py::test_name  # one test
 uvx ruff format . && uvx ruff check .       # format + lint (import sorting included)
@@ -127,7 +127,8 @@ Runtime nuance:
 - Known test caveat: with every extra installed, the two `litert` static-int8 tests can fail in a
   full in-process `pytest` run with `No module named 'litert_converter.mlir.dialects.quant'`
   (litert-torch ships no Python `quant` dialect; b/362798610). They pass in isolation and the CLI
-  export works, since a real export is a fresh process.
+  export works, since a real export is a fresh process, so CI and the quality gate run
+  `tests/test_litert_backend.py` in its own `pytest` process.
 - For `litert`, `tensorrt` and `executorch` `--mode int8`, `--calibration-data` accepts either an
   image directory (timm transforms applied automatically, `--calibration-samples` limits count,
   default 128) or a torch-saved tensor `(N, C, H, W)`. Int8 requires `--calibration-data` or
@@ -139,8 +140,8 @@ Runtime nuance:
   Requires `pip install 'timmx[ncnn]'` (installs `pnnx` for conversion and `ncnn` for verification).
   ncnn has no batch dimension: `--batch-size` must be `1`, and pnnx cannot convert batch-dependent
   reshapes (ViT attention) — such exports fail verification (the error appends a hint).
-- For `tensorrt`, `--device cuda`, TensorRT `>= 10` (`pip install tensorrt`; 11 is what PyPI
-  serves) and `onnxscript` (via `pip install 'timmx[onnx]'`) are required. TensorRT export uses
+- For `tensorrt`, `--device cuda`, TensorRT `>= 11` (`pip install tensorrt`; the 10.x line was
+  never tested) and `onnxscript` (via `pip install 'timmx[onnx]'`) are required. TensorRT export uses
   dynamo-based ONNX as an intermediate step (`external_data=False` to embed weights inline).
 - For `tensorrt`, networks are built strongly typed (`NetworkDefinitionCreationFlag.STRONGLY_TYPED`),
   so precision comes from the graph: TensorRT 11 removed `EXPLICIT_BATCH`, the `FP16`/`INT8` builder
@@ -199,10 +200,11 @@ Runtime nuance:
 Run these from repo root:
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --extra litert --group dev
 uvx ruff format .
 uvx ruff check .
-uv run pytest
+uv run pytest --ignore=tests/test_litert_backend.py
+uv run pytest tests/test_litert_backend.py   # own process, see the litert test caveat
 uv build
 ```
 
@@ -212,10 +214,22 @@ Core dependencies (`timm`, `torch`, `typer`, `rich`, `numpy`) are in `[project.d
 deps are optional extras in `[project.optional-dependencies]`: `onnx`, `openvino`, `coreml`, `coreai`,
 `litert`, `ncnn`, `executorch`.
 TensorRT cannot be resolved cross-platform (CUDA-only wheels) so it is not an extra — users install it
-directly with `pip install tensorrt`. Core requires `torch>=2.9` and Python `>=3.11,<3.15`.
-`litert-torch` requires `torch<2.14`, so the `litert` extra pins torch; `coremltools` has no
-Python 3.14 wheels yet, so the `coreml` extra needs Python `<=3.13`; `coreai-core` likewise ships
-no Python 3.14 wheels and only builds for macOS 26+ arm64 and manylinux x86_64.
+directly with `pip install tensorrt`. Core requires `torch>=2.13` and Python `>=3.11,<3.15`.
+
+Version policy: support only what CI tests. CI installs the committed `uv.lock`, which Dependabot
+refreshes weekly, so every dependency is tested at its latest resolvable version. The floors in
+`pyproject.toml` are the versions the last release's CI ran with (raise them at each release) and
+there are no upper bounds beyond those upstream forces. Never add version-conditional compatibility
+code: when an upstream release breaks a backend, fix forward or drop the backend.
+`[tool.uv] override-dependencies` lifts litert-torch's conservative pins (`torch<2.14`, and
+`typing-extensions<4.13` via xdsl, which blocks `onnx>=1.22`) for dev/CI only. pip users get what
+litert-torch allows, so the torch floor stays one release behind the latest while litert-torch
+lags (it has trailed each torch release by 1 to 13 weeks).
+
+Platform gaps: `coremltools` has no Python 3.14 wheels yet, so the `coreml` extra needs Python
+`<=3.13`; `coreai-core` likewise ships no Python 3.14 wheels and only builds for macOS 26+ arm64
+and manylinux x86_64; `litert-converter` and `ai-edge-tensorflow` have no Windows or Python 3.14
+wheels, so the `litert` extra needs Python `<=3.13` on Linux x86_64 or macOS arm64.
 
 ## Scope Discipline
 

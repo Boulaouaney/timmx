@@ -498,8 +498,8 @@ def _import_tensorrt() -> object:
             "tensorrt is required for TensorRT export. "
             "Install with: pip install tensorrt (requires CUDA)"
         ) from exc
-    if not hasattr(trt.NetworkDefinitionCreationFlag, "STRONGLY_TYPED"):
-        raise ExportError(
-            f"TensorRT >= 10 is required (found {getattr(trt, '__version__', 'unknown')})."
-        )
+    # Only TensorRT 11 has ever been tested (strongly typed networks, no EXPLICIT_BATCH flag).
+    version = getattr(trt, "__version__", "0")
+    if int(version.split(".")[0]) < 11:
+        raise ExportError(f"TensorRT >= 11 is required (found {version}).")
     return trt

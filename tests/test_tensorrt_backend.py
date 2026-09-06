@@ -165,6 +165,7 @@ class _FakeParser:
 
 
 class _FakeTRT:
+    __version__ = "11.2.1.2"
     Logger = _FakeLogger
     Builder = _FakeBuilder
     OnnxParser = _FakeParser

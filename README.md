@@ -50,11 +50,12 @@ TensorRT requires CUDA and must be installed separately:
 pip install tensorrt  # Linux/Windows with CUDA only
 ```
 
-> **Note:** `coremltools` has no Python 3.14 wheels yet, so the `coreml` extra needs
-> Python `<=3.13`. `litert-torch` currently requires `torch<2.14`, so the `litert`
-> extra pins torch accordingly. `coreai-core` ships wheels only for Python `<=3.13`
-> on macOS 26+ (arm64) and manylinux x86_64, and `coreai-torch` is validated against
-> `torch<=2.13`.
+> **Note:** timmx tracks the latest release of every dependency and is only tested
+> against those (`torch>=2.13`). `coremltools` has no Python 3.14 wheels yet, so the
+> `coreml` extra needs Python `<=3.13`. `litert-torch` currently pins `torch<2.14`, so
+> installing the `litert` extra holds torch one release back; it also has no Windows or
+> Python 3.14 wheels. `coreai-core` ships wheels only for Python `<=3.13` on macOS 26+
+> (arm64) and manylinux x86_64.
 
 Check which backends are available:
 
@@ -65,7 +66,7 @@ timmx doctor
 ## Quick Start
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --extra litert --group dev
 uv run timmx doctor
 uv run timmx --help
 ```
@@ -363,7 +364,7 @@ uv run timmx export ncnn resnet18 \
 
 ### TensorRT
 
-Requires an NVIDIA GPU with CUDA, TensorRT 10 or newer (`pip install tensorrt`) and the `onnx`
+Requires an NVIDIA GPU with CUDA, TensorRT 11 or newer (`pip install tensorrt`) and the `onnx`
 extra. Engines are built as strongly typed networks: `fp16` runs the whole graph in half precision
 behind fp32 inputs/outputs, and `int8` inserts explicit Q/DQ quantization (symmetric int8, per-channel
 weights) on every conv/linear layer, which needs `pip install torchao`. The engine is run once after
