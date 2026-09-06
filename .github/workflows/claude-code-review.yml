@@ -5,6 +5,9 @@ on:
 
 jobs:
   review:
+    # Dependabot-triggered runs get Dependabot secrets, not repository secrets, so the OAuth
+    # token is empty and the review fails; version bumps do not need a review anyway.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
