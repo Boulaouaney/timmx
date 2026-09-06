@@ -499,7 +499,11 @@ def _import_tensorrt() -> object:
             "Install with: pip install tensorrt (requires CUDA)"
         ) from exc
     # Only TensorRT 11 has ever been tested (strongly typed networks, no EXPLICIT_BATCH flag).
-    version = getattr(trt, "__version__", "0")
-    if int(version.split(".")[0]) < 11:
+    version = getattr(trt, "__version__", "unknown")
+    try:
+        major = int(version.split(".")[0])
+    except ValueError:
+        major = 0
+    if major < 11:
         raise ExportError(f"TensorRT >= 11 is required (found {version}).")
     return trt
