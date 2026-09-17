@@ -7,19 +7,7 @@ requires-python = ">=3.11,<3.15"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Youssef Boulaouane", email = "y.boulaouane11@gmail.com" }]
-keywords = [
-  "coreml",
-  "deep-learning",
-  "executorch",
-  "inference",
-  "litert",
-  "model-export",
-  "onnx",
-  "openvino",
-  "pytorch",
-  "tensorrt",
-  "timm"
-]
+keywords = ["coreml", "deep-learning", "executorch", "inference", "litert", "model-export", "onnx", "openvino", "pytorch", "tensorrt", "timm"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
@@ -43,6 +31,14 @@ dependencies = [
   "typer",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Boulaouaney/timmx"
+Issues = "https://github.com/Boulaouaney/timmx/issues"
+Repository = "https://github.com/Boulaouaney/timmx"
+
+[project.scripts]
+timmx = "timmx.cli:main"
+
 [project.optional-dependencies]
 coreai = ["coreai-torch>=0.4.2"]
 coreml = ["coremltools>=9.0", "scikit-learn"]
@@ -51,14 +47,6 @@ litert = ["litert-torch>=0.9.4"]
 ncnn = ["ncnn", "pnnx"]
 onnx = ["onnx>=1.21", "onnxruntime>=1.29", "onnxscript>=0.7", "onnxslim"]
 openvino = ["openvino>=2026.3"]
-
-[project.scripts]
-timmx = "timmx.cli:main"
-
-[project.urls]
-Homepage = "https://github.com/Boulaouaney/timmx"
-Issues = "https://github.com/Boulaouaney/timmx/issues"
-Repository = "https://github.com/Boulaouaney/timmx"
 
 [dependency-groups]
 dev = [
@@ -69,18 +57,9 @@ dev = [
 requires = ["uv_build>=0.10.0,<0.13.0"]
 build-backend = "uv_build"
 
-[tool.uv.build-backend]
-module-name = "timmx"
-module-root = "src"
-
-[tool.uv]
-# Dev/CI resolve every extra at once, and litert-torch's conservative pins (torch<2.14, and
-# typing-extensions<4.13 via xdsl, which blocks onnx>=1.22) would hold the whole project one
-# release back. Both are lifted here so CI tests the latest of everything; the suite passes with
-# litert-torch on the overridden versions. Published metadata is untouched, so pip users still get
-# whatever litert-torch allows.
-override-dependencies = ["torch", "typing-extensions"]
-
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py311"
@@ -90,6 +69,14 @@ line-length = 100
 # pinned so newer ruff defaults do not change CI
 select = ["E4", "E7", "E9", "F", "I"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
+[tool.uv]
+# Dev/CI resolve every extra at once, and litert-torch's conservative pins (torch<2.14, and
+# typing-extensions<4.13 via xdsl, which blocks onnx>=1.22) would hold the whole project one
+# release back. Both are lifted here so CI tests the latest of everything; the suite passes with
+# litert-torch on the overridden versions. Published metadata is untouched, so pip users still get
+# whatever litert-torch allows.
+override-dependencies = ["torch", "typing-extensions"]
+
+[tool.uv.build-backend]
+module-name = "timmx"
+module-root = "src"
