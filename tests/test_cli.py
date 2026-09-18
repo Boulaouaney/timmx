@@ -164,3 +164,12 @@ def test_export_ncnn_help_shows_options() -> None:
     assert "--softmax" in _plain(result.output)
     assert "--mean" in _plain(result.output)
     assert "--std" in _plain(result.output)
+
+
+def test_export_defaults_output_to_model_name(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["export", "torchscript", "resnet18", "--input-size", "3", "32", "32"]
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "resnet18.pt").exists()

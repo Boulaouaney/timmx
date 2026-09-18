@@ -71,6 +71,10 @@ Every backend must:
 - Use plain `bool` defaults (no explicit param_decls) for `--flag/--no-flag` toggles
 - Use `StrEnum` types for choices (e.g., `Device`, `LiteRTMode`, `ConvertTo`)
 - Use `tuple[int, int, int] | None` for `--input-size`
+- Take `output: OutputOpt` (`Path | None`) and pass `default_suffix` (the format's extension, or
+  a directory suffix such as `_ncnn`) to `prepare_export()`, which resolves a missing `--output`
+  to `<model name><suffix>` in the current directory via `default_output_path()` (`/` and `:`
+  become `_`) and refuses to overwrite an existing default path
 
 The CLI must remain format-agnostic and dispatch through the registry.
 

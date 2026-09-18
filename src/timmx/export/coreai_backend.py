@@ -13,6 +13,7 @@ from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
+    OUTPUT_DEFAULT_HELP,
     BatchSizeOpt,
     CheckpointOpt,
     DeviceOpt,
@@ -55,9 +56,11 @@ class CoreAIBackend(ExportBackend):
         def command(
             model_name: ModelNameArg,
             output: Annotated[
-                Path,
-                typer.Option(help="Path of the .aimodel asset directory to write."),
-            ],
+                Path | None,
+                typer.Option(
+                    help=f"Path of the .aimodel asset directory to write ({OUTPUT_DEFAULT_HELP})."
+                ),
+            ] = None,
             checkpoint: CheckpointOpt = None,
             pretrained: PretrainedOpt = False,
             num_classes: NumClassesOpt = None,
@@ -77,7 +80,7 @@ class CoreAIBackend(ExportBackend):
             mean: MeanOpt = None,
             std: StdOpt = None,
         ) -> None:
-            if output.suffix != ".aimodel":
+            if output is not None and output.suffix != ".aimodel":
                 raise ConfigurationError("--output must be an .aimodel path for Core AI.")
             if dynamic_batch and batch_size < 2:
                 raise ConfigurationError(
@@ -89,6 +92,7 @@ class CoreAIBackend(ExportBackend):
             prep = prepare_export(
                 model_name=model_name,
                 output=output,
+                default_suffix=".aimodel",
                 checkpoint=checkpoint,
                 pretrained=pretrained,
                 num_classes=num_classes,

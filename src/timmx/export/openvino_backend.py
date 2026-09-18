@@ -9,6 +9,7 @@ import typer
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
+    OUTPUT_DEFAULT_HELP,
     BatchSizeOpt,
     CheckpointOpt,
     DeviceOpt,
@@ -47,9 +48,12 @@ class OpenVINOBackend(ExportBackend):
         def command(
             model_name: ModelNameArg,
             output: Annotated[
-                Path,
-                typer.Option(help="Path of the IR .xml file (the .bin is written alongside)."),
-            ],
+                Path | None,
+                typer.Option(
+                    help=f"Path of the IR .xml file (the .bin is written alongside; "
+                    f"{OUTPUT_DEFAULT_HELP})."
+                ),
+            ] = None,
             checkpoint: CheckpointOpt = None,
             pretrained: PretrainedOpt = False,
             num_classes: NumClassesOpt = None,
@@ -74,7 +78,7 @@ class OpenVINOBackend(ExportBackend):
             mean: MeanOpt = None,
             std: StdOpt = None,
         ) -> None:
-            if output.suffix != ".xml":
+            if output is not None and output.suffix != ".xml":
                 raise ConfigurationError("--output must be an .xml path for OpenVINO IR.")
 
             ov = _import_openvino()
@@ -82,6 +86,7 @@ class OpenVINOBackend(ExportBackend):
             prep = prepare_export(
                 model_name=model_name,
                 output=output,
+                default_suffix=".xml",
                 checkpoint=checkpoint,
                 pretrained=pretrained,
                 num_classes=num_classes,

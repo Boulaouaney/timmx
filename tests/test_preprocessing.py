@@ -9,6 +9,7 @@ from timmx.errors import ConfigurationError
 from timmx.export.common import (
     PrePostWrapper,
     create_timm_model,
+    default_output_path,
     prepare_export,
     resolve_input_size,
     wrap_with_preprocessing,
@@ -183,6 +184,7 @@ def test_prepare_export_wrapped_model_stays_in_eval_mode(tmp_path) -> None:
     prep = prepare_export(
         model_name="resnet18",
         output=tmp_path / "out.pt",
+        default_suffix=".pt",
         checkpoint=None,
         pretrained=False,
         num_classes=None,
@@ -202,6 +204,7 @@ def test_prepare_export_rejects_mean_std_without_wrapper_flags(tmp_path) -> None
         prepare_export(
             model_name="resnet18",
             output=tmp_path / "out.pt",
+            default_suffix=".pt",
             checkpoint=None,
             pretrained=False,
             num_classes=None,
@@ -231,6 +234,7 @@ def test_prepare_export_softmax_only_matches_raw_model_softmax(tmp_path) -> None
     prep = prepare_export(
         model_name="resnet18",
         output=tmp_path / "out.pt",
+        default_suffix=".pt",
         checkpoint=None,
         pretrained=False,
         num_classes=None,
@@ -259,6 +263,7 @@ def test_prepare_export_grayscale_wrapper_runs_forward_pass(tmp_path) -> None:
     prep = prepare_export(
         model_name="resnet18",
         output=tmp_path / "out.pt",
+        default_suffix=".pt",
         checkpoint=None,
         pretrained=False,
         num_classes=None,
@@ -282,6 +287,7 @@ def test_prepare_export_rejects_unsupported_in_chans(tmp_path, bad_in_chans: int
         prepare_export(
             model_name="resnet18",
             output=tmp_path / "out.pt",
+            default_suffix=".pt",
             checkpoint=None,
             pretrained=False,
             num_classes=None,
@@ -297,6 +303,7 @@ def test_prepare_export_rejects_input_size_channel_mismatch(tmp_path) -> None:
         prepare_export(
             model_name="resnet18",
             output=tmp_path / "out.pt",
+            default_suffix=".pt",
             checkpoint=None,
             pretrained=False,
             num_classes=None,
@@ -305,4 +312,48 @@ def test_prepare_export_rejects_input_size_channel_mismatch(tmp_path) -> None:
             input_size=(3, 32, 32),
             device="cpu",
             normalize=True,
+        )
+
+
+def test_default_output_path_uses_cwd_and_sanitizes_name(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert default_output_path("resnet18", ".onnx") == tmp_path / "resnet18.onnx"
+    assert (
+        default_output_path("hf-hub:timm/resnet50.a1_in1k", ".pte")
+        == tmp_path / "hf-hub_timm_resnet50.a1_in1k.pte"
+    )
+
+
+def test_prepare_export_defaults_output_to_model_name(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    prep = prepare_export(
+        model_name="resnet18",
+        output=None,
+        default_suffix=".pt2",
+        checkpoint=None,
+        pretrained=False,
+        num_classes=None,
+        in_chans=None,
+        batch_size=1,
+        input_size=(3, 32, 32),
+        device="cpu",
+    )
+    assert prep.output_path == tmp_path / "resnet18.pt2"
+
+
+def test_prepare_export_refuses_to_overwrite_default_output(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "resnet18.pt2").write_bytes(b"checkpoint")
+    with pytest.raises(ConfigurationError, match="already exists; pass --output"):
+        prepare_export(
+            model_name="resnet18",
+            output=None,
+            default_suffix=".pt2",
+            checkpoint=None,
+            pretrained=False,
+            num_classes=None,
+            in_chans=None,
+            batch_size=1,
+            input_size=(3, 32, 32),
+            device="cpu",
         )
