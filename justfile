@@ -7,7 +7,7 @@ default:
 
 # Install every extra plus the dev group
 sync:
-    uv sync {{ extras }} --group dev
+    uv sync --locked {{ extras }} --group dev
 
 # Format Python and TOML in place
 fmt:
@@ -34,5 +34,5 @@ test-one target:
 build:
     uv build
 
-# Everything CI runs
-check: lint test build
+# Everything CI runs (the locked sync catches a stale uv.lock before CI does)
+check: sync lint test build

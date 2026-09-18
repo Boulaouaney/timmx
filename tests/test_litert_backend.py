@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from conftest import CALIBRATION_NORMALIZATION_CASES
 
 from timmx.errors import ConfigurationError
 from timmx.export.common import wrap_with_preprocessing
@@ -190,14 +189,14 @@ def test_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: Path) -> 
         )
 
 
-@pytest.mark.parametrize(("export_kwargs", "expected"), CALIBRATION_NORMALIZATION_CASES)
 def test_int8_calibration_normalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     calibration_capture,
-    export_kwargs: dict[str, object],
-    expected: dict[str, object],
+    calibration_case: tuple[dict[str, object], dict[str, object]],
 ) -> None:
+    export_kwargs, expected = calibration_case
+
     class _FakeEdgeModel:
         def export(self, path: str) -> None:
             Path(path).write_bytes(b"tfl3")

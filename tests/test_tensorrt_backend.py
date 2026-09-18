@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 import torch
-from conftest import CALIBRATION_NORMALIZATION_CASES
 
 from timmx.errors import ConfigurationError
 from timmx.export.common import PreparedExport, wrap_with_preprocessing
@@ -351,14 +350,13 @@ def test_tensorrt_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: 
         )
 
 
-@pytest.mark.parametrize(("export_kwargs", "expected"), CALIBRATION_NORMALIZATION_CASES)
 def test_tensorrt_int8_calibration_normalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     calibration_capture,
-    export_kwargs: dict[str, object],
-    expected: dict[str, object],
+    calibration_case: tuple[dict[str, object], dict[str, object]],
 ) -> None:
+    export_kwargs, expected = calibration_case
     output_path = tmp_path / "model.engine"
     prepare_kwargs: dict[str, object] = {}
     _patch_fake_runtime(

@@ -16,21 +16,27 @@ _STD = (0.125, 0.5, 0.25)
 # alone leaves image normalization on.
 CALIBRATION_NORMALIZATION_CASES = [
     pytest.param(
-        {"mean": _MEAN, "std": _STD},
-        {"mean": _MEAN, "std": _STD, "normalize_images": True},
+        ({"mean": _MEAN, "std": _STD}, {"mean": _MEAN, "std": _STD, "normalize_images": True}),
         id="mean-std-without-wrapper",
     ),
     pytest.param(
-        {"normalize": True, "softmax": True, "mean": _MEAN, "std": _STD},
-        {"normalize_images": False},
+        (
+            {"normalize": True, "softmax": True, "mean": _MEAN, "std": _STD},
+            {"normalize_images": False},
+        ),
         id="wrapper-disables-image-normalization",
     ),
     pytest.param(
-        {"softmax": True},
-        {"normalize_images": True},
+        ({"softmax": True}, {"normalize_images": True}),
         id="softmax-only-keeps-image-normalization",
     ),
 ]
+
+
+@pytest.fixture(params=CALIBRATION_NORMALIZATION_CASES)
+def calibration_case(request: pytest.FixtureRequest) -> tuple[dict[str, object], dict[str, object]]:
+    """One (export kwargs, expected resolve_calibration_batches kwargs) case from the list above."""
+    return request.param
 
 
 @pytest.fixture

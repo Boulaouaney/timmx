@@ -57,7 +57,7 @@ The `justfile` wraps these (`just sync|fmt|lint|test|build|check`).
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `info` model inspection, `list` model search, and `doctor` diagnostic commands)
 - Tests: `tests/` (`conftest.py` holds the shared int8 calibration-normalization cases and the
-  `calibration_capture` fixture used by the executorch, litert and tensorrt tests)
+  `calibration_case`/`calibration_capture` fixtures used by the executorch, litert and tensorrt tests)
 
 ## Backend Design Contract
 
