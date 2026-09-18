@@ -129,7 +129,8 @@ uv run timmx export onnx resnet18 --pretrained --output ./artifacts/resnet18.onn
 directory as `<model name>.<ext>` (here `resnet18.onnx`; Core ML picks `.mlpackage` or
 `.mlmodel` from `--convert-to`, ncnn writes a `<model name>_ncnn/` directory, and `/` or `:` in
 hub names such as `hf-hub:timm/resnet50.a1_in1k` become `_`). A default path that already
-exists is never overwritten; pass `--output` to overwrite a file on purpose.
+exists is never overwritten; pass `--output` to overwrite a file on purpose. The written path is
+printed when the export finishes.
 
 Export a fine-tuned checkpoint with dynamic batching:
 
