@@ -79,7 +79,7 @@ class CoreAIBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             if output is not None and output.suffix != ".aimodel":
                 raise ConfigurationError("--output must be an .aimodel path for Core AI.")
             if dynamic_batch and batch_size < 2:
@@ -145,6 +145,8 @@ class CoreAIBackend(ExportBackend):
                     prep.example_input,
                     reference_output(prep.model, prep.example_input),
                 )
+
+            return prep.output_path
 
         return command
 

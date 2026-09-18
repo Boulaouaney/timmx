@@ -71,6 +71,23 @@ uv run timmx doctor
 uv run timmx --help
 ```
 
+## Python API
+
+Every export is also a function call. Options are the backend's CLI flags as keyword arguments
+(`--dynamic-batch` becomes `dynamic_batch=True`; choices are plain strings), `output` defaults
+like the CLI, and the written path is returned:
+
+```python
+import timmx
+
+timmx.backends()  # ['coreai', 'coreml', 'executorch', ...]
+path = timmx.export("onnx", "resnet18", pretrained=True, dynamic_batch=True)
+path = timmx.export("litert", "resnet18", mode="int8", calibration_data="./images", output="r18.tflite")
+```
+
+Failures raise `timmx.TimmxError` subclasses (`ConfigurationError` for bad options,
+`ExportError` for conversion or verification failures).
+
 ## Export Verification
 
 Every backend reloads the file it just wrote, runs it on the sample input, and compares the

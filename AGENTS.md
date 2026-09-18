@@ -56,6 +56,7 @@ The `justfile` wraps these (`just sync|fmt|lint|test|build|check`).
 - Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping, `wrap_with_preprocessing()` helper, and `MeanOpt`/`StdOpt`/`NormalizeOpt`/`SoftmaxOpt` Typer type aliases)
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `info` model inspection, `list` model search, and `doctor` diagnostic commands)
+- Python API: `src/timmx/api.py` (`timmx.export(backend, model_name, **options)` calls the backend command with the CLI flags as kwargs and returns the written path; `timmx.backends()` lists names)
 - Tests: `tests/` (`conftest.py` holds the shared int8 calibration-normalization cases and the
   `calibration_case`/`calibration_capture` fixtures used by the executorch, litert and tensorrt tests)
 
@@ -64,7 +65,8 @@ The `justfile` wraps these (`just sync|fmt|lint|test|build|check`).
 Every backend must:
 - Implement `ExportBackend` (`name`, `help`, `create_command`)
 - If the backend has optional dependencies, override `check_dependencies()` returning `DependencyStatus`
-- `create_command()` returns a Typer-compatible function with `Annotated` type parameters
+- `create_command()` returns a Typer-compatible function with `Annotated` type parameters that
+  returns `prep.output_path` (the Python API relies on it; Typer ignores the return value)
 - Own all format-specific CLI flags (as Typer-annotated params) in its own module
 - Raise `timmx.errors.TimmxError` subclasses for user-facing failures (the CLI wrapper catches these and exits with code 2)
 - Use `typer.Option("--flag-name")` with explicit param_decls for store-true flags (no `--no-` form)

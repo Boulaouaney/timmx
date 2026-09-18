@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -21,8 +22,8 @@ class ExportBackend(ABC):
     help: str
 
     @abstractmethod
-    def create_command(self) -> Callable[..., None]:
-        """Return a Typer-compatible command function."""
+    def create_command(self) -> Callable[..., Path]:
+        """Return a Typer-compatible command function that returns the written path."""
 
     def check_dependencies(self) -> DependencyStatus:
         """Check if this backend's required dependencies are importable.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated
 
 import torch
@@ -82,7 +83,7 @@ class OnnxBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             if opset < 7:
                 raise ConfigurationError("--opset must be >= 7.")
             if dynamic_batch and batch_size < 2:
@@ -170,5 +171,7 @@ class OnnxBackend(ExportBackend):
                 verify_outputs(
                     reference_output(prep.model, prep.example_input), actual, backend="ONNX"
                 )
+
+            return prep.output_path
 
         return command

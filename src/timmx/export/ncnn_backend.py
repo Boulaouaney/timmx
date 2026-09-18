@@ -78,7 +78,7 @@ class NcnnBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             if batch_size != 1:
                 raise ConfigurationError(
                     "ncnn models have no batch dimension; --batch-size must be 1."
@@ -155,6 +155,8 @@ class NcnnBackend(ExportBackend):
                     prep.example_input,
                     reference_output(prep.model, prep.example_input),
                 )
+
+            return prep.output_path
 
         return command
 

@@ -136,7 +136,7 @@ class LiteRTBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             if mode == LiteRTMode.int8 and device != Device.cpu:
                 raise ConfigurationError(
                     "LiteRT int8 mode currently requires --device cpu for PT2E quantization."
@@ -228,6 +228,8 @@ class LiteRTBackend(ExportBackend):
                 _verify_tflite_model(
                     prep.output_path, example_input, reference_output(prep.model, verify_input)
                 )
+
+            return prep.output_path
 
         return command
 

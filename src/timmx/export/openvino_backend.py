@@ -77,7 +77,7 @@ class OpenVINOBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             if output is not None and output.suffix != ".xml":
                 raise ConfigurationError("--output must be an .xml path for OpenVINO IR.")
 
@@ -124,6 +124,8 @@ class OpenVINOBackend(ExportBackend):
                 verify_outputs(
                     reference_output(prep.model, prep.example_input), actual, backend="OpenVINO"
                 )
+
+            return prep.output_path
 
         return command
 
