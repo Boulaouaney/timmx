@@ -2,7 +2,7 @@
 
 from importlib.metadata import version
 
-from timmx.api import backends, export
+from timmx.api import backends, export_model
 from timmx.errors import ConfigurationError, ExportError, TimmxError
 
 __all__ = [
@@ -11,6 +11,6 @@ __all__ = [
     "TimmxError",
     "__version__",
     "backends",
-    "export",
+    "export_model",
 ]
 __version__ = version("timmx")

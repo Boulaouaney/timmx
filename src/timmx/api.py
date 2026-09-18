@@ -1,4 +1,8 @@
-"""Python API: the same exports as the CLI, as a function call."""
+"""Python API: the same exports as the CLI, as a function call.
+
+The function is `export_model`, not `export`: `timmx.export` is the backend subpackage, and rebinding
+it on the package would shadow the module for `timmx.export.<module>` attribute lookups.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +17,13 @@ def backends() -> list[str]:
     return create_builtin_registry().names()
 
 
-def export(backend: str, model_name: str, **options: object) -> Path:
+def export_model(backend: str, model_name: str, **options: object) -> Path:
     """Export a timm model with one backend and return the written path.
 
     *options* are the backend's CLI flags as keyword arguments (``--dynamic-batch`` becomes
     ``dynamic_batch=True``, choices are plain strings such as ``mode="int8"``)::
 
-        timmx.export("onnx", "resnet18", pretrained=True, dynamic_batch=True, output="r18.onnx")
+        timmx.export_model("onnx", "resnet18", pretrained=True, dynamic_batch=True, output="r18.onnx")
 
     ``output`` defaults like the CLI (``<model name>.<ext>`` in the current directory).
     Failures raise :class:`timmx.errors.TimmxError` subclasses; an unknown option raises

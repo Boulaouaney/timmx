@@ -56,7 +56,7 @@ The `justfile` wraps these (`just sync|fmt|lint|test|build|check`).
 - Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping, `wrap_with_preprocessing()` helper, and `MeanOpt`/`StdOpt`/`NormalizeOpt`/`SoftmaxOpt` Typer type aliases)
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `info` model inspection, `list` model search, and `doctor` diagnostic commands)
-- Python API: `src/timmx/api.py` (`timmx.export(backend, model_name, **options)` calls the backend command with the CLI flags as kwargs and returns the written path; `timmx.backends()` lists names)
+- Python API: `src/timmx/api.py` (`timmx.export_model(backend, model_name, **options)` calls the backend command with the CLI flags as kwargs and returns the written path; `timmx.backends()` lists names)
 - Tests: `tests/` (`conftest.py` holds the shared int8 calibration-normalization cases and the
   `calibration_case`/`calibration_capture` fixtures used by the executorch, litert and tensorrt tests)
 
