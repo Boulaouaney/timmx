@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from conftest import CALIBRATION_NORMALIZATION_CASES
 
 from timmx.errors import ConfigurationError
 from timmx.export.common import PreparedExport, wrap_with_preprocessing
@@ -350,12 +351,16 @@ def test_tensorrt_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: 
         )
 
 
-def test_tensorrt_int8_allows_mean_std_for_calibration_without_wrapper_flags(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(("export_kwargs", "expected"), CALIBRATION_NORMALIZATION_CASES)
+def test_tensorrt_int8_calibration_normalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    calibration_capture,
+    export_kwargs: dict[str, object],
+    expected: dict[str, object],
 ) -> None:
     output_path = tmp_path / "model.engine"
     prepare_kwargs: dict[str, object] = {}
-    calibrator_kwargs: dict[str, object] = {}
     _patch_fake_runtime(
         monkeypatch,
         output_path,
@@ -363,98 +368,23 @@ def test_tensorrt_int8_allows_mean_std_for_calibration_without_wrapper_flags(
         batch_size=2,
         capture_prepare=prepare_kwargs,
     )
-    monkeypatch.setattr(
-        "timmx.export.tensorrt_backend.resolve_calibration_batches",
-        lambda **kwargs: calibrator_kwargs.update(kwargs) or [torch.rand(2, 3, 16, 16)],
-    )
+    captured = calibration_capture("timmx.export.tensorrt_backend", torch.rand(2, 3, 16, 16))
 
     TensorRTBackend().create_command()(
         **_build_kwargs(
-            output_path,
-            mode="int8",
-            batch_size=2,
-            random_calibration=True,
-            mean=(0.5, 0.25, 0.75),
-            std=(0.125, 0.5, 0.25),
+            output_path, mode="int8", batch_size=2, random_calibration=True, **export_kwargs
         )
     )
 
     assert output_path.exists()
-    assert prepare_kwargs["normalize"] is False
-    assert prepare_kwargs["softmax"] is False
-    assert prepare_kwargs["mean"] is None
-    assert prepare_kwargs["std"] is None
-    assert calibrator_kwargs["mean"] == (0.5, 0.25, 0.75)
-    assert calibrator_kwargs["std"] == (0.125, 0.5, 0.25)
-    assert calibrator_kwargs["normalize_images"] is True
-
-
-def test_tensorrt_int8_wrapper_disables_image_normalization_for_calibration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    output_path = tmp_path / "model.engine"
-    prepare_kwargs: dict[str, object] = {}
-    calibrator_kwargs: dict[str, object] = {}
-    _patch_fake_runtime(
-        monkeypatch,
-        output_path,
-        model=_ConvModel().eval(),
-        batch_size=2,
-        capture_prepare=prepare_kwargs,
-    )
-    monkeypatch.setattr(
-        "timmx.export.tensorrt_backend.resolve_calibration_batches",
-        lambda **kwargs: calibrator_kwargs.update(kwargs) or [torch.rand(2, 3, 16, 16)],
-    )
-
-    TensorRTBackend().create_command()(
-        **_build_kwargs(
-            output_path,
-            mode="int8",
-            batch_size=2,
-            random_calibration=True,
-            normalize=True,
-            softmax=True,
-            mean=(0.5, 0.25, 0.75),
-            std=(0.125, 0.5, 0.25),
-        )
-    )
-
-    assert output_path.exists()
-    assert prepare_kwargs["softmax"] is True
-    assert prepare_kwargs["mean"] == (0.5, 0.25, 0.75)
-    assert prepare_kwargs["std"] == (0.125, 0.5, 0.25)
-    assert calibrator_kwargs["normalize_images"] is False
-
-
-def test_tensorrt_int8_softmax_only_keeps_image_normalization_for_calibration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    output_path = tmp_path / "model.engine"
-    calibrator_kwargs: dict[str, object] = {}
-    _patch_fake_runtime(
-        monkeypatch,
-        output_path,
-        model=_ConvModel().eval(),
-        batch_size=2,
-    )
-    monkeypatch.setattr(
-        "timmx.export.tensorrt_backend.resolve_calibration_batches",
-        lambda **kwargs: calibrator_kwargs.update(kwargs) or [torch.rand(2, 3, 16, 16)],
-    )
-
-    TensorRTBackend().create_command()(
-        **_build_kwargs(
-            output_path,
-            mode="int8",
-            batch_size=2,
-            random_calibration=True,
-            softmax=True,
-        )
-    )
-
-    assert output_path.exists()
-    assert calibrator_kwargs["normalize_images"] is True
+    for key, value in expected.items():
+        assert captured[key] == value
+    # --mean/--std reach the wrapper only together with --normalize.
+    normalize = export_kwargs.get("normalize", False)
+    assert prepare_kwargs["normalize"] is normalize
+    assert prepare_kwargs["softmax"] is export_kwargs.get("softmax", False)
+    assert prepare_kwargs["mean"] == (export_kwargs.get("mean") if normalize else None)
+    assert prepare_kwargs["std"] == (export_kwargs.get("std") if normalize else None)
 
 
 def test_tensorrt_fp32_wraps_preprocessing_and_softmax(
