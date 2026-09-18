@@ -26,6 +26,8 @@ from timmx.export.common import (
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
+    batch_dynamic_shapes,
+    capture_program,
     prepare_export,
     reference_output,
     verify_outputs,
@@ -106,18 +108,17 @@ class CoreAIBackend(ExportBackend):
                 std=std,
             )
 
-            dynamic_shapes = ({0: torch.export.Dim("batch")},) if dynamic_batch else None
+            exported_program = capture_program(
+                prep.model, prep.example_input, dynamic_shapes=batch_dynamic_shapes(dynamic_batch)
+            )
             try:
-                exported_program = torch.export.export(
-                    prep.model, (prep.example_input,), dynamic_shapes=dynamic_shapes
-                )
                 # get_decomp_table() keeps composite ops (SDPA, instance_norm, pixel_shuffle)
                 # intact so the Core AI runtime can pick its own kernels for them.
                 exported_program = exported_program.run_decompositions(
                     coreai_torch.get_decomp_table()
                 )
             except Exception as exc:
-                raise ExportError(f"torch.export capture failed: {exc}") from exc
+                raise ExportError(f"torch.export decomposition failed: {exc}") from exc
 
             try:
                 program = (

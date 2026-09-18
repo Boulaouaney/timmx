@@ -28,6 +28,8 @@ from timmx.export.common import (
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
+    batch_dynamic_shapes,
+    capture_program,
     prepare_export,
     reference_output,
     verify_outputs,
@@ -225,20 +227,18 @@ class CoreMLBackend(ExportBackend):
                 convert_kwargs["inputs"] = [_image_input_type(prep.resolved_input_size, ct)]
 
             if source == ExportSource.torch_export:
-                dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
-                if dynamic_batch:
-                    dynamic_shapes = ({0: torch.export.Dim("batch", min=1, max=batch_upper_bound)},)
-
+                exported_program = capture_program(
+                    prep.model,
+                    prep.example_input,
+                    dynamic_shapes=batch_dynamic_shapes(
+                        dynamic_batch, batch_min=1, batch_max=batch_upper_bound
+                    ),
+                )
                 try:
-                    exported_program = torch.export.export(
-                        prep.model,
-                        (prep.example_input,),
-                        dynamic_shapes=dynamic_shapes,
-                    )
                     # coremltools requires ATEN dialect, not TRAINING
                     exported_program = exported_program.run_decompositions({})
                 except Exception as exc:
-                    raise ExportError(f"torch.export capture failed: {exc}") from exc
+                    raise ExportError(f"torch.export decomposition failed: {exc}") from exc
 
                 try:
                     coreml_model = ct.convert(exported_program, **convert_kwargs)

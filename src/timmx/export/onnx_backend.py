@@ -23,6 +23,7 @@ from timmx.export.common import (
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
+    batch_dynamic_shapes,
     prepare_export,
     reference_output,
     verify_outputs,
@@ -116,8 +117,7 @@ class OnnxBackend(ExportBackend):
                 "dynamo": True,
                 "external_data": external_data,
             }
-            if dynamic_batch:
-                export_kwargs["dynamic_shapes"] = ({0: torch.export.Dim("batch")},)
+            export_kwargs["dynamic_shapes"] = batch_dynamic_shapes(dynamic_batch)
 
             try:
                 torch.onnx.export(prep.model, (prep.example_input,), **export_kwargs)

@@ -53,7 +53,7 @@ The `justfile` wraps these (`just sync|fmt|lint|test|build|check`).
 - Export backend interface: `src/timmx/export/base.py` (`ExportBackend` ABC, `DependencyStatus`)
 - Backend registry: `src/timmx/export/registry.py`
 - Backend implementations: `src/timmx/export/<format>_backend.py`
-- Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping, `wrap_with_preprocessing()` helper, and `MeanOpt`/`StdOpt`/`NormalizeOpt`/`SoftmaxOpt` Typer type aliases)
+- Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping, `wrap_with_preprocessing()` helper, `capture_program()`/`batch_dynamic_shapes()` for `torch.export` capture, and `MeanOpt`/`StdOpt`/`NormalizeOpt`/`SoftmaxOpt` Typer type aliases)
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `info` model inspection, `list` model search, and `doctor` diagnostic commands)
 - Python API: `src/timmx/api.py` (`timmx.export_model(backend, model_name, **options)` calls the backend command with the CLI flags as kwargs and returns the written path; `timmx.backends()` lists names)
@@ -73,6 +73,8 @@ Every backend must:
 - Use plain `bool` defaults (no explicit param_decls) for `--flag/--no-flag` toggles
 - Use `StrEnum` types for choices (e.g., `Device`, `LiteRTMode`, `ConvertTo`)
 - Use `tuple[int, int, int] | None` for `--input-size`
+- Capture with `capture_program()` and build `--dynamic-batch` shapes with `batch_dynamic_shapes()`
+  from `common.py` (the batch bounds differ per backend, the capture call and its error do not)
 - Take `output: OutputOpt` (`Path | None`) and pass `default_suffix` (the format's extension, or
   a directory suffix such as `_ncnn`) to `prepare_export()`, which resolves a missing `--output`
   to `<model name><suffix>` in the current directory via `default_output_path()` (`/` and `:`

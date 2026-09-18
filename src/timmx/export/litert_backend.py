@@ -26,6 +26,7 @@ from timmx.export.common import (
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
+    capture_program,
     prepare_export,
     reference_output,
     verify_outputs,
@@ -246,7 +247,7 @@ def _prepare_pt2e_quantized_module(
     from torchao.quantization.pt2e import quantize_pt2e
 
     try:
-        exported_module = torch.export.export(model, (example_input,), strict=False).module()
+        exported_module = capture_program(model, example_input).module()
 
         quantizer = pt2e_quantizer.PT2EQuantizer().set_global(
             pt2e_quantizer.get_symmetric_quantization_config(
@@ -263,6 +264,8 @@ def _prepare_pt2e_quantized_module(
         quantized_module = quantize_pt2e.convert_pt2e(prepared_module, fold_quantize=False)
         # Suppress LiteRT training-mode warning; graph already has eval semantics.
         quantized_module.training = False
+    except ExportError:
+        raise
     except Exception as exc:
         raise ExportError(f"Failed to prepare int8 PT2E quantized model: {exc}") from exc
 
