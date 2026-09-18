@@ -56,7 +56,7 @@ class LiteRTBackend(ExportBackend):
             install_hint="pip install 'timmx[litert]'",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,

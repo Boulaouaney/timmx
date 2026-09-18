@@ -52,7 +52,7 @@ class CoreAIBackend(ExportBackend):
             )
         return DependencyStatus(available=True, missing_packages=[], install_hint="")
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: Annotated[

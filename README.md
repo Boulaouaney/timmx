@@ -74,8 +74,9 @@ uv run timmx --help
 ## Python API
 
 Every export is also a function call. Options are the backend's CLI flags as keyword arguments
-(`--dynamic-batch` becomes `dynamic_batch=True`; choices are plain strings), `output` defaults
-like the CLI, and the written path is returned:
+(`--dynamic-batch` becomes `dynamic_batch=True`; paths may be strings and choices are their plain
+string values, exactly as on the command line), `output` defaults like the CLI, and the written
+path is returned:
 
 ```python
 import timmx
@@ -85,8 +86,9 @@ path = timmx.export_model("onnx", "resnet18", pretrained=True, dynamic_batch=Tru
 path = timmx.export_model("litert", "resnet18", mode="int8", calibration_data="./images", output="r18.tflite")
 ```
 
-Failures raise `timmx.TimmxError` subclasses (`ConfigurationError` for bad options,
-`ExportError` for conversion or verification failures).
+Failures raise `timmx.TimmxError` subclasses: `ConfigurationError` for an unknown backend,
+option or choice value and for incompatible flags, `ExportError` for conversion or verification
+failures.
 
 ## Export Verification
 

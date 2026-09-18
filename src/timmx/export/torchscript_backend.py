@@ -40,7 +40,7 @@ class TorchScriptBackend(ExportBackend):
     name = "torchscript"
     help = "Export a timm model to TorchScript (.pt)."
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,

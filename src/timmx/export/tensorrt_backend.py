@@ -69,7 +69,7 @@ class TensorRTBackend(ExportBackend):
             install_hint=" && ".join(hints) if hints else "",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,

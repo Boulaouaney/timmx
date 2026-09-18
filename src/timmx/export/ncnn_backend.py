@@ -49,7 +49,7 @@ class NcnnBackend(ExportBackend):
             install_hint="pip install 'timmx[ncnn]'",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: Annotated[

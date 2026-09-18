@@ -67,7 +67,7 @@ class ExecuTorchBackend(ExportBackend):
             install_hint="pip install 'timmx[executorch]'",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,

@@ -63,7 +63,7 @@ class CoreMLBackend(ExportBackend):
             install_hint="pip install 'timmx[coreml]'",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,

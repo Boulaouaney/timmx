@@ -49,7 +49,7 @@ class OnnxBackend(ExportBackend):
             install_hint="pip install 'timmx[onnx]'",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,
