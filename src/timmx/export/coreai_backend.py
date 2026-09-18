@@ -13,6 +13,7 @@ from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
+    OUTPUT_DEFAULT_HELP,
     BatchSizeOpt,
     CheckpointOpt,
     DeviceOpt,
@@ -57,8 +58,7 @@ class CoreAIBackend(ExportBackend):
             output: Annotated[
                 Path | None,
                 typer.Option(
-                    help="Path of the .aimodel asset directory to write (default: "
-                    "<model name>.aimodel in the current directory)."
+                    help=f"Path of the .aimodel asset directory to write ({OUTPUT_DEFAULT_HELP})."
                 ),
             ] = None,
             checkpoint: CheckpointOpt = None,

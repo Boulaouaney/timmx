@@ -56,12 +56,9 @@ SUPPORTED_INPUT_CHANNELS = frozenset({1, 3})
 # ---------------------------------------------------------------------------
 
 ModelNameArg = Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")]
+OUTPUT_DEFAULT_HELP = "default: <model name>.<ext> in the current directory, never overwritten"
 OutputOpt = Annotated[
-    Path | None,
-    typer.Option(
-        help="Path to write the exported model (default: <model name>.<ext> in the current "
-        "directory)."
-    ),
+    Path | None, typer.Option(help=f"Path to write the exported model ({OUTPUT_DEFAULT_HELP}).")
 ]
 CheckpointOpt = Annotated[Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")]
 PretrainedOpt = Annotated[bool, typer.Option("--pretrained", help="Load timm pretrained weights.")]
@@ -108,7 +105,6 @@ def prepare_export(
     *,
     model_name: str,
     output: Path | None,
-    default_suffix: str,
     checkpoint: Path | None,
     pretrained: bool,
     num_classes: int | None,
@@ -121,13 +117,15 @@ def prepare_export(
     softmax: bool = False,
     mean: tuple[float, ...] | None = None,
     std: tuple[float, ...] | None = None,
+    default_suffix: str = "",
 ) -> PreparedExport:
     """Validate common args, create the timm model, and build an example input.
 
     *output=None* resolves to :func:`default_output_path` with *default_suffix* (the backend's
-    file extension, or a directory suffix such as ``_ncnn``).  Set *output_is_dir=True* when the
-    backend writes to a directory rather than a single file (e.g. ncnn).  The resolved path is
-    then created as a directory; otherwise its parent directory is created.
+    file extension, or a directory suffix such as ``_ncnn``) and refuses to overwrite an existing
+    path, since the user never chose it.  Set *output_is_dir=True* when the backend writes to a
+    directory rather than a single file (e.g. ncnn).  The resolved path is then created as a
+    directory; otherwise its parent directory is created.
     """
     validate_common_args(
         batch_size=batch_size,
@@ -141,8 +139,12 @@ def prepare_export(
 
     if output is None:
         output = default_output_path(model_name, default_suffix)
+        if output.exists():
+            raise ConfigurationError(
+                f"Default output {output} already exists; pass --output to choose a path "
+                "(an explicit --output is overwritten)."
+            )
     output_path = Path(output).expanduser().resolve()
-    console.print(f"[dim]output: {output_path}[/dim]", highlight=False, soft_wrap=True)
     try:
         if output_is_dir:
             output_path.mkdir(parents=True, exist_ok=True)

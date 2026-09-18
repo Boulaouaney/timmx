@@ -12,6 +12,7 @@ import typer
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
+    OUTPUT_DEFAULT_HELP,
     BatchSizeOpt,
     CheckpointOpt,
     DeviceOpt,
@@ -54,8 +55,8 @@ class NcnnBackend(ExportBackend):
             output: Annotated[
                 Path | None,
                 typer.Option(
-                    help="Output directory to write the exported ncnn model files (default: "
-                    "<model name>_ncnn in the current directory)."
+                    help=f"Output directory to write the exported ncnn model files "
+                    f"({OUTPUT_DEFAULT_HELP})."
                 ),
             ] = None,
             checkpoint: CheckpointOpt = None,

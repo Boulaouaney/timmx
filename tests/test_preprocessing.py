@@ -385,3 +385,21 @@ def test_prepare_export_defaults_output_to_model_name(tmp_path, monkeypatch) -> 
         device="cpu",
     )
     assert prep.output_path == tmp_path / "resnet18.pt2"
+
+
+def test_prepare_export_refuses_to_overwrite_default_output(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "resnet18.pt2").write_bytes(b"checkpoint")
+    with pytest.raises(ConfigurationError, match="already exists; pass --output"):
+        prepare_export(
+            model_name="resnet18",
+            output=None,
+            default_suffix=".pt2",
+            checkpoint=None,
+            pretrained=False,
+            num_classes=None,
+            in_chans=None,
+            batch_size=1,
+            input_size=(3, 32, 32),
+            device="cpu",
+        )

@@ -128,6 +128,11 @@ def test_dynamic_batch_sets_shape_range(tmp_path: Path) -> None:
     assert batch_range.upperBound == 8
 
 
+def test_rejects_output_suffix_that_does_not_match_convert_to(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match=".mlpackage path for --convert-to mlprogram"):
+        CoreMLBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.mlmodel"))
+
+
 def test_neuralnetwork_rejects_compute_precision(tmp_path: Path) -> None:
     output_path = tmp_path / "resnet18.mlmodel"
     kwargs = _build_kwargs(

@@ -9,6 +9,7 @@ import typer
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
+    OUTPUT_DEFAULT_HELP,
     BatchSizeOpt,
     CheckpointOpt,
     DeviceOpt,
@@ -49,8 +50,8 @@ class OpenVINOBackend(ExportBackend):
             output: Annotated[
                 Path | None,
                 typer.Option(
-                    help="Path of the IR .xml file (the .bin is written alongside; default: "
-                    "<model name>.xml in the current directory)."
+                    help=f"Path of the IR .xml file (the .bin is written alongside; "
+                    f"{OUTPUT_DEFAULT_HELP})."
                 ),
             ] = None,
             checkpoint: CheckpointOpt = None,

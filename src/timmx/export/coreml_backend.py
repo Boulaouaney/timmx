@@ -122,6 +122,11 @@ class CoreMLBackend(ExportBackend):
                 typer.Option(help="Reload the saved model and compare its output with PyTorch."),
             ] = True,
         ) -> None:
+            expected_suffix = ".mlpackage" if convert_to == ConvertTo.mlprogram else ".mlmodel"
+            if output is not None and output.suffix != expected_suffix:
+                raise ConfigurationError(
+                    f"--output must be a {expected_suffix} path for --convert-to {convert_to}."
+                )
             if convert_to == ConvertTo.neuralnetwork and compute_precision is not None:
                 raise ConfigurationError(
                     "--compute-precision is only supported when --convert-to mlprogram."
@@ -148,7 +153,7 @@ class CoreMLBackend(ExportBackend):
             prep = prepare_export(
                 model_name=model_name,
                 output=output,
-                default_suffix=".mlpackage" if convert_to == ConvertTo.mlprogram else ".mlmodel",
+                default_suffix=expected_suffix,
                 checkpoint=checkpoint,
                 pretrained=pretrained,
                 num_classes=num_classes,

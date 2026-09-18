@@ -195,4 +195,3 @@ def test_export_defaults_output_to_model_name(tmp_path, monkeypatch) -> None:
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "resnet18.pt").exists()
-    assert str(tmp_path / "resnet18.pt") in _plain(result.output)
