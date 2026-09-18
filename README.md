@@ -83,7 +83,9 @@ import timmx
 
 timmx.backends()  # ['coreai', 'coreml', 'executorch', ...]
 path = timmx.export_model("onnx", "resnet18", pretrained=True, dynamic_batch=True)
-path = timmx.export_model("litert", "resnet18", mode="int8", calibration_data="./images", output="r18.tflite")
+path = timmx.export_model(
+    "litert", "resnet18", mode="int8", calibration_data="./images", output="r18.tflite"
+)
 ```
 
 Failures raise `timmx.TimmxError` subclasses: `ConfigurationError` for an unknown backend,
