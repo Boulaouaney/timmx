@@ -375,6 +375,22 @@ def test_class_labels_must_match_model_outputs(tmp_path: Path) -> None:
         CoreMLBackend().create_command()(**kwargs)
 
 
+def test_class_labels_require_batch_size_one(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage", batch_size=2) | {
+        "class_labels": _write_labels(tmp_path, count=1000)
+    }
+    with pytest.raises(ConfigurationError, match="--class-labels requires --batch-size 1"):
+        CoreMLBackend().create_command()(**kwargs)
+
+
+def test_class_labels_must_be_unique(tmp_path: Path) -> None:
+    labels = tmp_path / "dup.txt"
+    labels.write_text("cat\ndog\ncat\n")
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage") | {"class_labels": labels}
+    with pytest.raises(ConfigurationError, match="duplicate labels"):
+        CoreMLBackend().create_command()(**kwargs)
+
+
 def test_class_labels_file_must_not_be_empty(tmp_path: Path) -> None:
     empty = tmp_path / "empty.txt"
     empty.write_text("\n\n")

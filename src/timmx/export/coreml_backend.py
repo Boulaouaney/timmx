@@ -155,6 +155,17 @@ class CoreMLBackend(ExportBackend):
                     "--image-input requires --batch-size 1 without --dynamic-batch."
                 )
             labels = _read_class_labels(class_labels) if class_labels is not None else None
+            if labels is not None and (batch_size != 1 or dynamic_batch):
+                raise ConfigurationError(
+                    "--class-labels requires --batch-size 1 without --dynamic-batch "
+                    "(a Core ML classifier labels one image)."
+                )
+            if labels is not None and not softmax:
+                console.print(
+                    "[bold yellow]note:[/bold yellow] --class-labels without --softmax: "
+                    "classLabel_probs will hold raw logits, not probabilities.",
+                    highlight=False,
+                )
             if convert_to == ConvertTo.neuralnetwork and compute_precision is not None:
                 raise ConfigurationError(
                     "--compute-precision is only supported when --convert-to mlprogram."
@@ -339,7 +350,6 @@ def _verify_coreml_model(
         pixels = (torch.rand_like(example_input) * 255).round()
         example_input = pixels / 255
         feed = _to_pil_image(pixels)
-    expected = reference_output(model, example_input)
     try:
         if platform.system() != "Darwin":
             ct.models.MLModel(str(output_path), skip_model_load=True)
@@ -354,7 +364,7 @@ def _verify_coreml_model(
             actual = np.array([[probabilities[label] for label in labels]])
     except Exception as exc:
         raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
-    verify_outputs(expected, actual, backend="Core ML")
+    verify_outputs(reference_output(model, example_input), actual, backend="Core ML")
 
 
 def _to_pil_image(pixels: torch.Tensor) -> Image.Image:
@@ -379,6 +389,8 @@ def _read_class_labels(path: Path) -> list[str]:
     labels = [label for label in labels if label]
     if not labels:
         raise ConfigurationError(f"--class-labels file {path} has no labels.")
+    if len(set(labels)) != len(labels):
+        raise ConfigurationError(f"--class-labels file {path} has duplicate labels.")
     return labels
 
 
