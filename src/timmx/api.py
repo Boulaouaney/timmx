@@ -21,7 +21,7 @@ def backends() -> list[str]:
     return create_builtin_registry().names()
 
 
-def export_model(backend: str, model_name: str, **options: object) -> Path:
+def export_model(backend: str, model_name: str, /, **options: object) -> Path:
     """Export a timm model with one backend and return the written path.
 
     *options* are the backend's CLI flags as keyword arguments (``--dynamic-batch`` becomes
