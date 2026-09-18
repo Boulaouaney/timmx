@@ -344,3 +344,106 @@ def test_default_source_is_torch_export(tmp_path: Path) -> None:
     spec = ct.models.MLModel(str(output), skip_model_load=True).get_spec()
     assert [feature.name for feature in spec.description.input] == ["input"]
     assert [feature.name for feature in spec.description.output] == ["output"]
+
+
+# --- image input / classifier tests ---
+
+
+def _write_labels(tmp_path: Path, count: int = 5) -> Path:
+    labels_path = tmp_path / "labels.txt"
+    labels_path.write_text("\n".join(f"class{i}" for i in range(count)) + "\n")
+    return labels_path
+
+
+def test_image_input_requires_normalize(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage") | {"image_input": True}
+    with pytest.raises(ConfigurationError, match="--image-input requires --normalize"):
+        CoreMLBackend().create_command()(**kwargs)
+
+
+def test_image_input_requires_batch_size_one(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage", normalize=True, batch_size=2)
+    with pytest.raises(ConfigurationError, match="--batch-size 1"):
+        CoreMLBackend().create_command()(**kwargs | {"image_input": True})
+
+
+def test_class_labels_must_match_model_outputs(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage") | {
+        "class_labels": _write_labels(tmp_path, count=3)
+    }
+    with pytest.raises(ConfigurationError, match="has 3 labels but the model has 1000 outputs"):
+        CoreMLBackend().create_command()(**kwargs)
+
+
+def test_class_labels_require_batch_size_one(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage", batch_size=2) | {
+        "class_labels": _write_labels(tmp_path, count=1000)
+    }
+    with pytest.raises(ConfigurationError, match="--class-labels requires --batch-size 1"):
+        CoreMLBackend().create_command()(**kwargs)
+
+
+def test_class_labels_must_be_unique(tmp_path: Path) -> None:
+    labels = tmp_path / "dup.txt"
+    labels.write_text("cat\ndog\ncat\n")
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage") | {"class_labels": labels}
+    with pytest.raises(ConfigurationError, match="duplicate labels"):
+        CoreMLBackend().create_command()(**kwargs)
+
+
+def test_class_labels_file_must_not_be_empty(tmp_path: Path) -> None:
+    empty = tmp_path / "empty.txt"
+    empty.write_text("\n\n")
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage") | {"class_labels": empty}
+    with pytest.raises(ConfigurationError, match="has no labels"):
+        CoreMLBackend().create_command()(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("source", "convert_to"),
+    [("torch-export", "mlprogram"), ("trace", "mlprogram"), ("trace", "neuralnetwork")],
+)
+def test_export_image_input_classifier(tmp_path: Path, source: str, convert_to: str) -> None:
+    """--image-input + --class-labels: image feature in, classLabel/classLabel_probs out."""
+    suffix = ".mlpackage" if convert_to == "mlprogram" else ".mlmodel"
+    output_path = tmp_path / f"resnet18_{source}_classifier{suffix}"
+    kwargs = _build_kwargs(
+        output_path,
+        source=source,
+        convert_to=convert_to,
+        compute_precision="float32" if convert_to == "mlprogram" else None,
+        normalize=True,
+        softmax=True,
+    ) | {"num_classes": 5, "image_input": True, "class_labels": _write_labels(tmp_path)}
+
+    CoreMLBackend().create_command()(**kwargs)
+
+    spec = ct.models.MLModel(str(output_path), skip_model_load=True).get_spec()
+    (model_input,) = spec.description.input
+    assert model_input.name == "input"
+    assert model_input.type.WhichOneof("Type") == "imageType"
+    assert model_input.type.imageType.colorSpace == ct.proto.FeatureTypes_pb2.ImageFeatureType.RGB
+    # mlprogram lists classLabel first, neuralnetwork the probabilities dict; names are what matter
+    assert {o.name: o.type.WhichOneof("Type") for o in spec.description.output} == {
+        "classLabel": "stringType",
+        "classLabel_probs": "dictionaryType",
+    }
+    assert spec.description.predictedFeatureName == "classLabel"
+    assert spec.description.predictedProbabilitiesName == "classLabel_probs"
+
+
+def test_export_image_input_grayscale_keeps_output_name(tmp_path: Path) -> None:
+    output_path = tmp_path / "resnet18_gray.mlpackage"
+    kwargs = _build_kwargs(output_path, compute_precision="float32", normalize=True) | {
+        "in_chans": 1,
+        "input_size": (1, 32, 32),
+        "image_input": True,
+    }
+
+    CoreMLBackend().create_command()(**kwargs)
+
+    spec = ct.models.MLModel(str(output_path), skip_model_load=True).get_spec()
+    image_type = spec.description.input[0].type.imageType
+    assert image_type.colorSpace == ct.proto.FeatureTypes_pb2.ImageFeatureType.GRAYSCALE
+    assert (image_type.width, image_type.height) == (32, 32)
+    assert [o.name for o in spec.description.output] == ["output"]
