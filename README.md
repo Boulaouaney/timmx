@@ -71,6 +71,27 @@ uv run timmx doctor
 uv run timmx --help
 ```
 
+## Python API
+
+Every export is also a function call. Options are the backend's CLI flags as keyword arguments
+(`--dynamic-batch` becomes `dynamic_batch=True`; paths may be strings and choices are their plain
+string values, exactly as on the command line), `output` defaults like the CLI, and the written
+path is returned:
+
+```python
+import timmx
+
+timmx.backends()  # ['coreai', 'coreml', 'executorch', ...]
+path = timmx.export_model("onnx", "resnet18", pretrained=True, dynamic_batch=True)
+path = timmx.export_model(
+    "litert", "resnet18", mode="int8", calibration_data="./images", output="r18.tflite"
+)
+```
+
+Failures raise `timmx.TimmxError` subclasses: `ConfigurationError` for an unknown backend,
+option or choice value and for incompatible flags, `ExportError` for conversion or verification
+failures.
+
 ## Export Verification
 
 Every backend reloads the file it just wrote, runs it on the sample input, and compares the
@@ -112,7 +133,8 @@ uv run timmx export onnx resnet18 --pretrained --output ./artifacts/resnet18.onn
 directory as `<model name>.<ext>` (here `resnet18.onnx`; Core ML picks `.mlpackage` or
 `.mlmodel` from `--convert-to`, ncnn writes a `<model name>_ncnn/` directory, and `/` or `:` in
 hub names such as `hf-hub:timm/resnet50.a1_in1k` become `_`). A default path that already
-exists is never overwritten; pass `--output` to overwrite a file on purpose.
+exists is never overwritten; pass `--output` to overwrite a file on purpose. The written path is
+printed when the export finishes.
 
 Export a fine-tuned checkpoint with dynamic batching:
 

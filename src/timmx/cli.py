@@ -55,10 +55,11 @@ def build_export_app(registry: BackendRegistry | None = None) -> None:
         @functools.wraps(command_fn)
         def wrapped(*args: object, _fn: object = command_fn, **kwargs: object) -> None:
             try:
-                _fn(*args, **kwargs)
+                path = _fn(*args, **kwargs)
             except TimmxError as exc:
                 console.print(f"[bold red]error:[/bold red] {exc}", highlight=False)
                 raise typer.Exit(code=2) from exc
+            console.print(f"saved: {path}", highlight=False, markup=False, soft_wrap=True)
 
         export_app.command(name=name, help=backend.help)(wrapped)
 

@@ -69,7 +69,7 @@ class TensorRTBackend(ExportBackend):
             install_hint=" && ".join(hints) if hints else "",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,
@@ -164,7 +164,7 @@ class TensorRTBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             if device != Device.cuda:
                 raise ConfigurationError("TensorRT export requires --device cuda.")
 
@@ -341,6 +341,8 @@ class TensorRTBackend(ExportBackend):
                     verify_input,
                     reference_output(prep.model, verify_input),
                 )
+
+            return prep.output_path
 
         return command
 

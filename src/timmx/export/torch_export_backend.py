@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated
 
 import torch
@@ -33,7 +34,7 @@ class TorchExportBackend(ExportBackend):
     name = "torch-export"
     help = "Export a timm model with torch.export (.pt2)."
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,
@@ -60,7 +61,7 @@ class TorchExportBackend(ExportBackend):
                     help="Reload the saved .pt2 archive and compare its output with PyTorch."
                 ),
             ] = True,
-        ) -> None:
+        ) -> Path:
             if dynamic_batch and batch_size < 2:
                 raise ConfigurationError(
                     "--dynamic-batch requires --batch-size >= 2 for stable symbolic shape capture."
@@ -111,5 +112,7 @@ class TorchExportBackend(ExportBackend):
                     raise ExportError(f"Saved torch.export archive failed to load: {exc}") from exc
                 expected = reference_output(prep.model, prep.example_input)
                 verify_outputs(expected, actual.cpu().numpy(), backend="torch.export")
+
+            return prep.output_path
 
         return command

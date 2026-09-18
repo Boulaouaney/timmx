@@ -67,7 +67,7 @@ class ExecuTorchBackend(ExportBackend):
             install_hint="pip install 'timmx[executorch]'",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,
@@ -164,7 +164,7 @@ class ExecuTorchBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             if mode == ExecuTorchMode.dynamic_int8:
                 if delegate != ExecuTorchDelegate.xnnpack:
                     raise ConfigurationError(
@@ -281,6 +281,8 @@ class ExecuTorchBackend(ExportBackend):
                     reference_output(prep.model, verify_input),
                     delegate=delegate,
                 )
+
+            return prep.output_path
 
         return command
 

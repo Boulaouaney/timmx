@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import torch
@@ -39,7 +40,7 @@ class TorchScriptBackend(ExportBackend):
     name = "torchscript"
     help = "Export a timm model to TorchScript (.pt)."
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,
@@ -62,7 +63,7 @@ class TorchScriptBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
-        ) -> None:
+        ) -> Path:
             prep = prepare_export(
                 model_name=model_name,
                 output=output,
@@ -104,5 +105,7 @@ class TorchScriptBackend(ExportBackend):
                     ) from exc
                 expected = reference_output(prep.model, prep.example_input)
                 verify_outputs(expected, actual.cpu().numpy(), backend="TorchScript")
+
+            return prep.output_path
 
         return command

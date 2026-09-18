@@ -63,7 +63,7 @@ class CoreMLBackend(ExportBackend):
             install_hint="pip install 'timmx[coreml]'",
         )
 
-    def create_command(self) -> Callable[..., None]:
+    def create_command(self) -> Callable[..., Path]:
         def command(
             model_name: ModelNameArg,
             output: OutputOpt = None,
@@ -121,7 +121,7 @@ class CoreMLBackend(ExportBackend):
                 bool,
                 typer.Option(help="Reload the saved model and compare its output with PyTorch."),
             ] = True,
-        ) -> None:
+        ) -> Path:
             expected_suffix = ".mlpackage" if convert_to == ConvertTo.mlprogram else ".mlmodel"
             if output is not None and output.suffix != expected_suffix:
                 raise ConfigurationError(
@@ -261,6 +261,8 @@ class CoreMLBackend(ExportBackend):
                     reference_output(prep.model, prep.example_input),
                     ct=ct,
                 )
+
+            return prep.output_path
 
         return command
 
