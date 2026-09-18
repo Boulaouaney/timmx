@@ -264,6 +264,8 @@ def _prepare_pt2e_quantized_module(
         quantized_module = quantize_pt2e.convert_pt2e(prepared_module, fold_quantize=False)
         # Suppress LiteRT training-mode warning; graph already has eval semantics.
         quantized_module.training = False
+    except ExportError:
+        raise
     except Exception as exc:
         raise ExportError(f"Failed to prepare int8 PT2E quantized model: {exc}") from exc
 

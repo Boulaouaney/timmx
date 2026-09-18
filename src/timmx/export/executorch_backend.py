@@ -403,6 +403,8 @@ def _export_quantized(
 
         quantized = quantize_pt2e.convert_pt2e(prepared)
         quantized.training = False
+    except ExportError:
+        raise
     except Exception as exc:
         raise ExportError(f"PT2E quantization failed: {exc}") from exc
 
