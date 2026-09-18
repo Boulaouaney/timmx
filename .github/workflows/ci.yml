@@ -15,6 +15,8 @@ jobs:
       - run: uv python install
       - run: uvx ruff format --check .
       - run: uvx ruff check .
+      - run: uvx tombi format --check pyproject.toml
+      - run: uvx tombi lint pyproject.toml
 
   test:
     runs-on: ${{ matrix.os }}

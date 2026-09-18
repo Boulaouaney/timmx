@@ -580,12 +580,15 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 ## Development
 
 ```bash
-uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --group dev  # install extras + pytest
-uvx ruff format .                                              # format
-uvx ruff check .                                               # lint
-uv run pytest                                                  # test
+uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --extra litert --group dev  # install extras + pytest
+uvx ruff format . && uvx tombi format pyproject.toml           # format
+uvx ruff check . && uvx tombi lint pyproject.toml              # lint
+uv run pytest --ignore=tests/test_litert_backend.py            # test
+uv run pytest tests/test_litert_backend.py                     # litert tests run in their own process
 uv build                                                       # build
 ```
+
+A [`justfile`](justfile) wraps the same commands: `just sync`, `just fmt`, `just lint`, `just test`, `just build`, and `just check` for everything CI runs.
 
 ## Adding a New Backend
 
