@@ -105,6 +105,13 @@ Runtime nuance:
   requires `--batch-size >= 2`. `--batch-upper-bound` applies to both sources (sets `max=` on
   `torch.export.Dim` for torch-export, `ct.RangeDim.upper_bound` for trace).
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
+- For `coreml`, `--image-input` passes `ct.ImageType(scale=1/255, color_layout=RGB|GRAYSCALE)` as
+  `inputs=` to `ct.convert()` (works with both capture sources); it requires `--normalize` (mean/std
+  stay in the wrapper because `ImageType` has a scalar `scale`, so per-channel std cannot be folded
+  in exactly) and `--batch-size 1` (image inputs are single images). `--class-labels FILE` sets
+  `ct.ClassifierConfig`, whose outputs are `classLabel` + `classLabel_probs`; `_name_io()` then
+  renames only the input, and verification reads the probabilities dict back in label order. Both
+  together are what the Xcode model preview needs.
 - For `coreai`, `--output` must be an `.aimodel` path; the asset is a *directory* that
   `AIProgram.save_asset()` creates (and replaces if it already exists), so `prepare_export` is
   called without `output_is_dir`. Conversion is `torch.export.export()` →

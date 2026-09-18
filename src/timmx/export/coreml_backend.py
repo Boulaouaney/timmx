@@ -6,7 +6,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
+import numpy as np
+import torch
 import typer
+from PIL import Image
 
 from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
@@ -117,6 +120,22 @@ class CoreMLBackend(ExportBackend):
             softmax: SoftmaxOpt = False,
             mean: MeanOpt = None,
             std: StdOpt = None,
+            image_input: Annotated[
+                bool,
+                typer.Option(
+                    "--image-input",
+                    help="Take an image (CVPixelBuffer, pixels scaled by 1/255) instead of a "
+                    "float tensor so Vision and the Xcode preview can feed the model; requires "
+                    "--normalize and --batch-size 1.",
+                ),
+            ] = False,
+            class_labels: Annotated[
+                Path | None,
+                typer.Option(
+                    help="Text file with one class label per line; makes the model a Core ML "
+                    "classifier (outputs classLabel and classLabel_probs)."
+                ),
+            ] = None,
             verify: Annotated[
                 bool,
                 typer.Option(help="Reload the saved model and compare its output with PyTorch."),
@@ -127,6 +146,15 @@ class CoreMLBackend(ExportBackend):
                 raise ConfigurationError(
                     f"--output must be a {expected_suffix} path for --convert-to {convert_to}."
                 )
+            if image_input and not normalize:
+                raise ConfigurationError(
+                    "--image-input requires --normalize (the model receives [0, 1] pixels)."
+                )
+            if image_input and (batch_size != 1 or dynamic_batch):
+                raise ConfigurationError(
+                    "--image-input requires --batch-size 1 without --dynamic-batch."
+                )
+            labels = _read_class_labels(class_labels) if class_labels is not None else None
             if convert_to == ConvertTo.neuralnetwork and compute_precision is not None:
                 raise ConfigurationError(
                     "--compute-precision is only supported when --convert-to mlprogram."
@@ -167,7 +195,23 @@ class CoreMLBackend(ExportBackend):
                 std=std,
             )
 
-            import torch
+            if labels is not None:
+                num_outputs = reference_output(prep.model, prep.example_input).shape[-1]
+                if len(labels) != num_outputs:
+                    raise ConfigurationError(
+                        f"--class-labels has {len(labels)} labels but the model has "
+                        f"{num_outputs} outputs."
+                    )
+
+            convert_kwargs: dict[str, object] = {"convert_to": str(convert_to)}
+            if compute_precision is not None:
+                convert_kwargs["compute_precision"] = _map_compute_precision(
+                    str(compute_precision), ct
+                )
+            if labels is not None:
+                convert_kwargs["classifier_config"] = ct.ClassifierConfig(labels)
+            if image_input:
+                convert_kwargs["inputs"] = [_image_input_type(prep.resolved_input_size, ct)]
 
             if source == ExportSource.torch_export:
                 dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
@@ -185,14 +229,6 @@ class CoreMLBackend(ExportBackend):
                 except Exception as exc:
                     raise ExportError(f"torch.export capture failed: {exc}") from exc
 
-                convert_kwargs: dict[str, object] = {
-                    "convert_to": str(convert_to),
-                }
-                if compute_precision is not None:
-                    convert_kwargs["compute_precision"] = _map_compute_precision(
-                        str(compute_precision), ct
-                    )
-
                 try:
                     coreml_model = ct.convert(exported_program, **convert_kwargs)
                 except Exception as exc:
@@ -206,26 +242,20 @@ class CoreMLBackend(ExportBackend):
                     except Exception as exc:
                         raise ExportError(f"TorchScript trace failed: {exc}") from exc
 
-                # TODO: Use ImageType with native normalization
-                input_type = ct.TensorType(
-                    name="input",
-                    shape=_build_input_shape(
-                        batch_size=batch_size,
-                        dynamic_batch=dynamic_batch,
-                        batch_upper_bound=batch_upper_bound,
-                        input_size=prep.resolved_input_size,
-                        ct=ct,
-                    ),
-                )
-                convert_kwargs: dict[str, object] = {
-                    "source": "pytorch",
-                    "inputs": [input_type],
-                    "convert_to": str(convert_to),
-                }
-                if compute_precision is not None:
-                    convert_kwargs["compute_precision"] = _map_compute_precision(
-                        str(compute_precision), ct
-                    )
+                convert_kwargs["source"] = "pytorch"
+                if not image_input:
+                    convert_kwargs["inputs"] = [
+                        ct.TensorType(
+                            name="input",
+                            shape=_build_input_shape(
+                                batch_size=batch_size,
+                                dynamic_batch=dynamic_batch,
+                                batch_upper_bound=batch_upper_bound,
+                                input_size=prep.resolved_input_size,
+                                ct=ct,
+                            ),
+                        )
+                    ]
 
                 try:
                     coreml_model = ct.convert(traced_model, **convert_kwargs)
@@ -235,7 +265,7 @@ class CoreMLBackend(ExportBackend):
                     ) from exc
 
             try:
-                coreml_model = _name_io(coreml_model, ct)
+                coreml_model = _name_io(coreml_model, ct, rename_output=labels is None)
             except Exception as exc:
                 raise ExportError(f"Failed to name Core ML inputs/outputs: {exc}") from exc
 
@@ -257,9 +287,11 @@ class CoreMLBackend(ExportBackend):
             if verify:
                 _verify_coreml_model(
                     prep.output_path,
+                    prep.model,
                     prep.example_input,
-                    reference_output(prep.model, prep.example_input),
                     ct=ct,
+                    image_input=image_input,
+                    labels=labels,
                 )
 
             return prep.output_path
@@ -267,10 +299,15 @@ class CoreMLBackend(ExportBackend):
         return command
 
 
-def _name_io(coreml_model: object, ct: object) -> object:
-    """Name the single input/output "input"/"output" regardless of the capture source."""
+def _name_io(coreml_model: object, ct: object, *, rename_output: bool = True) -> object:
+    """Name the single input/output "input"/"output" regardless of the capture source.
+
+    Classifiers keep coremltools' `classLabel`/`classLabel_probs` outputs (*rename_output=False*).
+    """
     spec = coreml_model.get_spec()
-    renames = {spec.description.input[0].name: "input", spec.description.output[0].name: "output"}
+    renames = {spec.description.input[0].name: "input"}
+    if rename_output:
+        renames[spec.description.output[0].name] = "output"
     for old, new in renames.items():
         if old != new:
             ct.utils.rename_feature(
@@ -287,18 +324,62 @@ def _name_io(coreml_model: object, ct: object) -> object:
 
 
 def _verify_coreml_model(
-    output_path: Path, example_input: object, expected: object, *, ct: object
+    output_path: Path,
+    model: torch.nn.Module,
+    example_input: torch.Tensor,
+    *,
+    ct: object,
+    image_input: bool = False,
+    labels: list[str] | None = None,
 ) -> None:
+    feed: object = example_input.cpu().numpy()
+    if image_input:
+        # Feed the same pixels to both: an 8-bit image to Core ML (scaled by 1/255 inside the
+        # model) and its [0, 1] float version to PyTorch.
+        pixels = (torch.rand_like(example_input) * 255).round()
+        example_input = pixels / 255
+        feed = _to_pil_image(pixels)
+    expected = reference_output(model, example_input)
     try:
         if platform.system() != "Darwin":
             ct.models.MLModel(str(output_path), skip_model_load=True)
             console.print("[dim]verify: metadata only (Core ML inference needs macOS)[/dim]")
             return
         loaded = ct.models.MLModel(str(output_path))
-        actual = loaded.predict({"input": example_input.cpu().numpy()})["output"]
+        prediction = loaded.predict({"input": feed})
+        if labels is None:
+            actual = prediction["output"]
+        else:
+            probabilities = prediction["classLabel_probs"]
+            actual = np.array([[probabilities[label] for label in labels]])
     except Exception as exc:
         raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
     verify_outputs(expected, actual, backend="Core ML")
+
+
+def _to_pil_image(pixels: torch.Tensor) -> Image.Image:
+    """(1, C, H, W) float tensor holding 0-255 values → PIL image (L for C=1, RGB for C=3)."""
+    array = pixels[0].cpu().numpy().astype(np.uint8)
+    if array.shape[0] == 1:
+        return Image.fromarray(array[0], mode="L")
+    return Image.fromarray(array.transpose(1, 2, 0), mode="RGB")
+
+
+def _image_input_type(input_size: tuple[int, int, int], ct: object) -> object:
+    """ImageType feeding 8-bit pixels scaled to [0, 1]; --normalize then applies mean/std."""
+    layout = ct.colorlayout.GRAYSCALE if input_size[0] == 1 else ct.colorlayout.RGB
+    return ct.ImageType(name="input", shape=(1, *input_size), scale=1 / 255, color_layout=layout)
+
+
+def _read_class_labels(path: Path) -> list[str]:
+    try:
+        labels = [line.strip() for line in Path(path).expanduser().read_text().splitlines()]
+    except OSError as exc:
+        raise ConfigurationError(f"Cannot read --class-labels file {path}: {exc}") from exc
+    labels = [label for label in labels if label]
+    if not labels:
+        raise ConfigurationError(f"--class-labels file {path} has no labels.")
+    return labels
 
 
 def _build_input_shape(

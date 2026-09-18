@@ -280,6 +280,28 @@ uv run timmx export coreml resnet18 \
 > `--int4` palettizes weights with per-tensor k-means and is lossy (cosine similarity around
 > `0.98` on ResNet-18). Check the `verify:` line printed after export before shipping it.
 
+#### Image input and Xcode preview
+
+`--image-input` makes the model take an image (a `CVPixelBuffer`, pixels scaled by 1/255) instead
+of a float tensor, so Vision requests and the Xcode model preview can feed it directly; it requires
+`--normalize` (mean/std stay embedded, so per-channel std is exact) and `--batch-size 1`. Add
+`--class-labels` (a text file with one label per line, as many as the model has outputs) to
+make it a Core ML classifier: the outputs become `classLabel` and `classLabel_probs`, which is what
+the Xcode preview and `VNClassificationObservation` show. Combine with `--softmax` so the
+probabilities are real probabilities:
+
+```bash
+uv run timmx export coreml resnet18 \
+  --pretrained \
+  --normalize --softmax \
+  --image-input \
+  --class-labels ./imagenet_labels.txt \
+  --output ./artifacts/resnet18_classifier.mlpackage
+```
+
+Grayscale models (`--in-chans 1`) get a grayscale image input. Verification feeds the same 8-bit
+pixels to Core ML (as a PIL image) and to PyTorch (scaled to `[0, 1]`).
+
 ### LiteRT / TFLite
 
 Supported modes: `fp32`, `fp16` (fp16 weights), `dynamic-int8` (int8 weights, fp32
