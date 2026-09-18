@@ -1,20 +1,11 @@
 from typer.testing import CliRunner
 
 from timmx.cli import app
+from timmx.export import create_builtin_registry
 
 runner = CliRunner()
 
-BACKENDS = [
-    "coreml",
-    "executorch",
-    "litert",
-    "ncnn",
-    "onnx",
-    "openvino",
-    "tensorrt",
-    "torch-export",
-    "torchscript",
-]
+BACKENDS = create_builtin_registry().names()
 
 
 def test_doctor_runs_successfully() -> None:
@@ -43,8 +34,6 @@ def test_doctor_shows_availability() -> None:
 
 
 def test_doctor_survives_backend_check_that_raises(monkeypatch) -> None:
-    from timmx.export import create_builtin_registry
-
     registry = create_builtin_registry()
     target_name, target_backend = registry.items()[0]
 

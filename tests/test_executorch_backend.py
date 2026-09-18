@@ -114,126 +114,33 @@ def test_rejects_mean_std_without_wrapper_flags_outside_int8(tmp_path: Path) -> 
         )
 
 
-def test_allows_mean_std_for_int8_calibration_without_wrapper_flags(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_int8_calibration_normalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    calibration_capture,
+    calibration_case: tuple[dict[str, object], dict[str, object]],
 ) -> None:
-    captured: dict[str, object] = {}
+    export_kwargs, expected = calibration_case
 
     class _FakeProgram:
         def write_to_file(self, handle) -> None:
             handle.write(b"pte")
 
-    def fake_resolve_calibration_batches(**kwargs):
-        captured.update(kwargs)
-        return [torch.randn(1, 3, 32, 32)]
-
     monkeypatch.setattr("timmx.export.executorch_backend._import_executorch", lambda: None)
     monkeypatch.setattr("timmx.export.executorch_backend._build_partitioner", lambda **_: [])
     monkeypatch.setattr(
-        "timmx.export.executorch_backend.resolve_calibration_batches",
-        fake_resolve_calibration_batches,
-    )
-    monkeypatch.setattr(
         "timmx.export.executorch_backend._export_quantized", lambda **_: _FakeProgram()
     )
+    captured = calibration_capture("timmx.export.executorch_backend", torch.randn(1, 3, 32, 32))
 
-    mean = (0.5, 0.25, 0.75)
-    std = (0.125, 0.5, 0.25)
-    output = tmp_path / "model_int8_mean_std.pte"
+    output = tmp_path / "model_int8.pte"
     ExecuTorchBackend().create_command()(
-        **_build_kwargs(
-            output,
-            mode="int8",
-            random_calibration=True,
-            mean=mean,
-            std=std,
-            verify=False,
-        )
+        **_build_kwargs(output, mode="int8", random_calibration=True, verify=False, **export_kwargs)
     )
 
     assert output.exists()
-    assert captured["mean"] == mean
-    assert captured["std"] == std
-    assert captured["normalize_images"] is True
-
-
-def test_int8_wrapper_disables_image_normalization_for_calibration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    captured: dict[str, object] = {}
-
-    class _FakeProgram:
-        def write_to_file(self, handle) -> None:
-            handle.write(b"pte")
-
-    def fake_resolve_calibration_batches(**kwargs):
-        captured.update(kwargs)
-        return [torch.randn(1, 3, 32, 32)]
-
-    monkeypatch.setattr("timmx.export.executorch_backend._import_executorch", lambda: None)
-    monkeypatch.setattr("timmx.export.executorch_backend._build_partitioner", lambda **_: [])
-    monkeypatch.setattr(
-        "timmx.export.executorch_backend.resolve_calibration_batches",
-        fake_resolve_calibration_batches,
-    )
-    monkeypatch.setattr(
-        "timmx.export.executorch_backend._export_quantized", lambda **_: _FakeProgram()
-    )
-
-    output = tmp_path / "model_int8_wrapped.pte"
-    ExecuTorchBackend().create_command()(
-        **_build_kwargs(
-            output,
-            mode="int8",
-            random_calibration=True,
-            normalize=True,
-            softmax=True,
-            mean=(0.5, 0.25, 0.75),
-            std=(0.125, 0.5, 0.25),
-            verify=False,
-        )
-    )
-
-    assert output.exists()
-    assert captured["normalize_images"] is False
-
-
-def test_int8_softmax_only_keeps_image_normalization_for_calibration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    captured: dict[str, object] = {}
-
-    class _FakeProgram:
-        def write_to_file(self, handle) -> None:
-            handle.write(b"pte")
-
-    def fake_resolve_calibration_batches(**kwargs):
-        captured.update(kwargs)
-        return [torch.randn(1, 3, 32, 32)]
-
-    monkeypatch.setattr("timmx.export.executorch_backend._import_executorch", lambda: None)
-    monkeypatch.setattr("timmx.export.executorch_backend._build_partitioner", lambda **_: [])
-    monkeypatch.setattr(
-        "timmx.export.executorch_backend.resolve_calibration_batches",
-        fake_resolve_calibration_batches,
-    )
-    monkeypatch.setattr(
-        "timmx.export.executorch_backend._export_quantized", lambda **_: _FakeProgram()
-    )
-
-    output = tmp_path / "model_int8_softmax_only.pte"
-    ExecuTorchBackend().create_command()(
-        **_build_kwargs(
-            output,
-            mode="int8",
-            random_calibration=True,
-            softmax=True,
-            verify=False,
-        )
-    )
-
-    assert output.exists()
-    assert captured["normalize_images"] is True
+    for key, value in expected.items():
+        assert captured[key] == value
 
 
 def test_rejects_dynamic_int8_with_coreml_delegate(tmp_path: Path) -> None:

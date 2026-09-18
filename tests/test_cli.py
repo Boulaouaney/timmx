@@ -3,6 +3,7 @@ import re
 from typer.testing import CliRunner
 
 from timmx.cli import app
+from timmx.export import create_builtin_registry
 
 runner = CliRunner()
 
@@ -14,10 +15,12 @@ def _plain(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
-def test_root_help_mentions_export() -> None:
+def test_root_help_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "export" in _plain(result.output)
+    output = _plain(result.output)
+    for command in ("export", "info", "doctor", "list"):
+        assert command in output
 
 
 def test_version_flag() -> None:
@@ -26,37 +29,12 @@ def test_version_flag() -> None:
     assert "timmx" in _plain(result.output)
 
 
-def test_root_help_mentions_info() -> None:
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "info" in _plain(result.output)
-
-
-def test_root_help_mentions_doctor() -> None:
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "doctor" in _plain(result.output)
-
-
-def test_root_help_mentions_list() -> None:
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "list" in _plain(result.output)
-
-
 def test_export_help_lists_backends() -> None:
     result = runner.invoke(app, ["export", "--help"])
     assert result.exit_code == 0
-    assert "coreai" in _plain(result.output)
-    assert "coreml" in _plain(result.output)
-    assert "executorch" in _plain(result.output)
-    assert "litert" in _plain(result.output)
-    assert "ncnn" in _plain(result.output)
-    assert "onnx" in _plain(result.output)
-    assert "openvino" in _plain(result.output)
-    assert "tensorrt" in _plain(result.output)
-    assert "torch-export" in _plain(result.output)
-    assert "torchscript" in _plain(result.output)
+    output = _plain(result.output)
+    for name in create_builtin_registry().names():
+        assert name in output
 
 
 def test_export_coreai_help_shows_options() -> None:

@@ -25,8 +25,11 @@ uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai
 uv run pytest                               # all tests
 uv run pytest tests/test_cli.py::test_name  # one test
 uvx ruff format . && uvx ruff check .       # format + lint (import sorting included)
+uvx tombi format pyproject.toml && uvx tombi lint pyproject.toml  # TOML format + lint
 uv build
 ```
+
+The `justfile` wraps these (`just sync|fmt|lint|test|build|check`).
 
 ## Non-Negotiable Tooling Rules
 
@@ -36,7 +39,7 @@ uv build
 - Module execution: `uv run -m module_name`
 - CLI tools (including this project): `uv run timmx ...`
 - Build packages with `uv build`
-- Run Ruff only through `uvx ruff`
+- Run Ruff only through `uvx ruff`, and tombi (TOML formatter/linter) through `uvx tombi`
 
 ## Python and Typing Rules
 
@@ -53,7 +56,8 @@ uv build
 - Shared model helpers: `src/timmx/export/common.py` (includes `PrePostWrapper` for preprocessing/postprocessing wrapping, `wrap_with_preprocessing()` helper, and `MeanOpt`/`StdOpt`/`NormalizeOpt`/`SoftmaxOpt` Typer type aliases)
 - Shared console: `src/timmx/console.py` (rich `Console` instance for all terminal output)
 - CLI entrypoint: `src/timmx/cli.py` (includes `info` model inspection, `list` model search, and `doctor` diagnostic commands)
-- Tests: `tests/`
+- Tests: `tests/` (`conftest.py` holds the shared int8 calibration-normalization cases and the
+  `calibration_case`/`calibration_capture` fixtures used by the executorch, litert and tensorrt tests)
 
 ## Backend Design Contract
 
@@ -203,6 +207,8 @@ Run these from repo root:
 uv sync --extra onnx --extra openvino --extra coreml --extra ncnn --extra coreai --extra executorch --extra litert --group dev
 uvx ruff format .
 uvx ruff check .
+uvx tombi format pyproject.toml
+uvx tombi lint pyproject.toml
 uv run pytest --ignore=tests/test_litert_backend.py
 uv run pytest tests/test_litert_backend.py   # own process, see the litert test caveat
 uv build
