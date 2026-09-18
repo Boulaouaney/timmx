@@ -399,12 +399,21 @@ def test_class_labels_file_must_not_be_empty(tmp_path: Path) -> None:
         CoreMLBackend().create_command()(**kwargs)
 
 
-@pytest.mark.parametrize("source", ["torch-export", "trace"])
-def test_export_image_input_classifier(tmp_path: Path, source: str) -> None:
+@pytest.mark.parametrize(
+    ("source", "convert_to"),
+    [("torch-export", "mlprogram"), ("trace", "mlprogram"), ("trace", "neuralnetwork")],
+)
+def test_export_image_input_classifier(tmp_path: Path, source: str, convert_to: str) -> None:
     """--image-input + --class-labels: image feature in, classLabel/classLabel_probs out."""
-    output_path = tmp_path / f"resnet18_{source}_classifier.mlpackage"
+    suffix = ".mlpackage" if convert_to == "mlprogram" else ".mlmodel"
+    output_path = tmp_path / f"resnet18_{source}_classifier{suffix}"
     kwargs = _build_kwargs(
-        output_path, source=source, compute_precision="float32", normalize=True, softmax=True
+        output_path,
+        source=source,
+        convert_to=convert_to,
+        compute_precision="float32" if convert_to == "mlprogram" else None,
+        normalize=True,
+        softmax=True,
     ) | {"num_classes": 5, "image_input": True, "class_labels": _write_labels(tmp_path)}
 
     CoreMLBackend().create_command()(**kwargs)
@@ -414,11 +423,13 @@ def test_export_image_input_classifier(tmp_path: Path, source: str) -> None:
     assert model_input.name == "input"
     assert model_input.type.WhichOneof("Type") == "imageType"
     assert model_input.type.imageType.colorSpace == ct.proto.FeatureTypes_pb2.ImageFeatureType.RGB
-    assert [(o.name, o.type.WhichOneof("Type")) for o in spec.description.output] == [
-        ("classLabel", "stringType"),
-        ("classLabel_probs", "dictionaryType"),
-    ]
+    # mlprogram lists classLabel first, neuralnetwork the probabilities dict; names are what matter
+    assert {o.name: o.type.WhichOneof("Type") for o in spec.description.output} == {
+        "classLabel": "stringType",
+        "classLabel_probs": "dictionaryType",
+    }
     assert spec.description.predictedFeatureName == "classLabel"
+    assert spec.description.predictedProbabilitiesName == "classLabel_probs"
 
 
 def test_export_image_input_grayscale_keeps_output_name(tmp_path: Path) -> None:

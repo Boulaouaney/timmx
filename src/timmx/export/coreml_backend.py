@@ -319,14 +319,25 @@ def _name_io(coreml_model: object, ct: object, *, rename_output: bool = True) ->
     renames = {spec.description.input[0].name: "input"}
     if rename_output:
         renames[spec.description.output[0].name] = "output"
+    else:
+        # The neuralnetwork classifier keeps the traced blob name on its probabilities dict.
+        probabilities = next(
+            output
+            for output in spec.description.output
+            if output.type.WhichOneof("Type") == "dictionaryType"
+        )
+        renames[probabilities.name] = "classLabel_probs"
     for old, new in renames.items():
         if old != new:
             ct.utils.rename_feature(
-                spec, old, new, rename_inputs=new == "input", rename_outputs=new == "output"
+                spec, old, new, rename_inputs=new == "input", rename_outputs=new != "input"
             )
-    if spec.WhichOneof("Type") == "neuralNetwork":
+    if not rename_output:
+        spec.description.predictedProbabilitiesName = "classLabel_probs"
+    kind = spec.WhichOneof("Type")
+    if kind in ("neuralNetwork", "neuralNetworkClassifier"):
         # rename_feature updates the interface but not the layer blobs of a neuralnetwork spec.
-        for layer in spec.neuralNetwork.layers:
+        for layer in getattr(spec, kind).layers:
             for blobs in (layer.input, layer.output):
                 for index, name in enumerate(blobs):
                     if name in renames:
@@ -383,9 +394,10 @@ def _image_input_type(input_size: tuple[int, int, int], ct: object) -> object:
 
 def _read_class_labels(path: Path) -> list[str]:
     try:
-        labels = [line.strip() for line in Path(path).expanduser().read_text().splitlines()]
-    except OSError as exc:
+        text = Path(path).expanduser().read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
         raise ConfigurationError(f"Cannot read --class-labels file {path}: {exc}") from exc
+    labels = [line.strip() for line in text.splitlines()]
     labels = [label for label in labels if label]
     if not labels:
         raise ConfigurationError(f"--class-labels file {path} has no labels.")
