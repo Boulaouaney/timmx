@@ -23,6 +23,8 @@ from timmx.export.common import (
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
+    batch_dynamic_shapes,
+    capture_program,
     prepare_export,
     reference_output,
     verify_outputs,
@@ -84,19 +86,12 @@ class TorchExportBackend(ExportBackend):
                 std=std,
             )
 
-            dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
-            if dynamic_batch:
-                dynamic_shapes = ({0: torch.export.Dim("batch")},)
-
-            try:
-                exported_program = torch.export.export(
-                    prep.model,
-                    (prep.example_input,),
-                    dynamic_shapes=dynamic_shapes,
-                    strict=strict,
-                )
-            except Exception as exc:
-                raise ExportError(f"torch.export capture failed: {exc}") from exc
+            exported_program = capture_program(
+                prep.model,
+                prep.example_input,
+                dynamic_shapes=batch_dynamic_shapes(dynamic_batch),
+                strict=strict,
+            )
 
             try:
                 torch.export.save(exported_program, str(prep.output_path))

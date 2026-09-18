@@ -5,9 +5,11 @@ import timm
 import torch
 from timm.data import resolve_data_config
 
-from timmx.errors import ConfigurationError
+from timmx.errors import ConfigurationError, ExportError
 from timmx.export.common import (
     PrePostWrapper,
+    batch_dynamic_shapes,
+    capture_program,
     create_timm_model,
     default_output_path,
     prepare_export,
@@ -357,3 +359,25 @@ def test_prepare_export_refuses_to_overwrite_default_output(tmp_path, monkeypatc
             input_size=(3, 32, 32),
             device="cpu",
         )
+
+
+def test_batch_dynamic_shapes_builds_a_bounded_batch_dim() -> None:
+    assert batch_dynamic_shapes(False, batch_min=1, batch_max=8) is None
+    (spec,) = batch_dynamic_shapes(True, batch_min=1, batch_max=8)
+    assert (spec[0].min, spec[0].max) == (1, 8)
+
+
+def test_capture_program_keeps_the_batch_symbolic() -> None:
+    program = capture_program(
+        _make_simple_model(), torch.rand(2, 3, 32, 32), dynamic_shapes=batch_dynamic_shapes(True)
+    )
+    assert program.module()(torch.rand(3, 3, 32, 32)).shape == (3, 1000)
+
+
+def test_capture_program_wraps_failures_in_export_error() -> None:
+    class _Broken(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            raise RuntimeError("boom")
+
+    with pytest.raises(ExportError, match="torch.export capture failed: .*boom"):
+        capture_program(_Broken(), torch.zeros(1))

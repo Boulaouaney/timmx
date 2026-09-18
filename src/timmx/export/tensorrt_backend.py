@@ -28,6 +28,8 @@ from timmx.export.common import (
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
+    batch_dynamic_shapes,
+    capture_program,
     prepare_export,
     reference_output,
     verify_outputs,
@@ -240,10 +242,9 @@ class TensorRTBackend(ExportBackend):
             # Strongly typed TensorRT networks take their precision from the graph, so fp16 and
             # int8 are expressed in the ONNX model rather than with builder flags (removed in
             # TensorRT 11 together with implicit int8 calibration).
-            dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None
-            if dynamic_batch:
-                batch_dim = torch.export.Dim("batch", min=batch_min, max=batch_max)
-                dynamic_shapes = ({0: batch_dim},)
+            dynamic_shapes = batch_dynamic_shapes(
+                dynamic_batch, batch_min=batch_min, batch_max=batch_max
+            )
 
             export_model: torch.nn.Module | torch.export.ExportedProgram = prep.model
             verify_input = prep.example_input
@@ -459,9 +460,7 @@ def _quantize_int8(
     # Capture with the batch symbol from the start: a module from a static export asserts the
     # traced batch size, which specializes a later dynamic re-export.
     try:
-        exported = torch.export.export(
-            model, (example_input,), dynamic_shapes=dynamic_shapes
-        ).module()
+        exported = capture_program(model, example_input, dynamic_shapes=dynamic_shapes).module()
         quantizer = _TensorRTQuantizer()
         prepared = quantize_pt2e.prepare_pt2e(exported, quantizer)
         if not quantizer.annotated:
@@ -476,7 +475,7 @@ def _quantize_int8(
         quantized = quantize_pt2e.convert_pt2e(prepared)
         quantized.training = False
         # The ONNX exporter keeps dynamic shapes from an ExportedProgram, not a GraphModule.
-        return torch.export.export(quantized, (example_input,), dynamic_shapes=dynamic_shapes)
+        return capture_program(quantized, example_input, dynamic_shapes=dynamic_shapes)
     except ExportError:
         raise
     except Exception as exc:

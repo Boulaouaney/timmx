@@ -297,6 +297,31 @@ def reference_output(model: torch.nn.Module, example_input: torch.Tensor) -> tor
         return model(example_input)
 
 
+def batch_dynamic_shapes(
+    dynamic_batch: bool, *, batch_min: int | None = None, batch_max: int | None = None
+) -> tuple[dict[int, torch.export.Dim], ...] | None:
+    """`dynamic_shapes` for torch.export / torch.onnx.export with a symbolic batch dimension."""
+    if not dynamic_batch:
+        return None
+    return ({0: torch.export.Dim("batch", min=batch_min, max=batch_max)},)
+
+
+def capture_program(
+    model: torch.nn.Module,
+    example_input: torch.Tensor,
+    *,
+    dynamic_shapes: tuple[dict[int, torch.export.Dim], ...] | None = None,
+    strict: bool = False,
+) -> torch.export.ExportedProgram:
+    """torch.export.export() on a single input; any failure becomes an ExportError."""
+    try:
+        return torch.export.export(
+            model, (example_input,), dynamic_shapes=dynamic_shapes, strict=strict
+        )
+    except Exception as exc:
+        raise ExportError(f"torch.export capture failed: {exc}") from exc
+
+
 def resolve_model_input_channels(model: torch.nn.Module) -> int:
     raw_channels = getattr(model, "in_chans", None)
     if isinstance(raw_channels, int):

@@ -28,6 +28,8 @@ from timmx.export.common import (
     PretrainedOpt,
     SoftmaxOpt,
     StdOpt,
+    batch_dynamic_shapes,
+    capture_program,
     prepare_export,
     reference_output,
     verify_outputs,
@@ -303,14 +305,6 @@ def _verify_pte(
     verify_outputs(expected, torch.as_tensor(actual).cpu().numpy(), backend="ExecuTorch")
 
 
-def _dynamic_shapes(
-    dynamic_batch: bool, batch_upper_bound: int
-) -> tuple[dict[int, torch.export.Dim], ...] | None:
-    if not dynamic_batch:
-        return None
-    return ({0: torch.export.Dim("batch", min=1, max=batch_upper_bound)},)
-
-
 @contextlib.contextmanager
 def _keep_batch_range(
     exported_program: torch.export.ExportedProgram, dynamic_batch: bool
@@ -361,14 +355,13 @@ def _export_standard(
 ) -> object:
     from executorch.exir import to_edge_transform_and_lower
 
-    try:
-        exported_program = torch.export.export(
-            model,
-            (example_input,),
-            dynamic_shapes=_dynamic_shapes(dynamic_batch, batch_upper_bound),
-        )
-    except Exception as exc:
-        raise ExportError(f"torch.export capture failed: {exc}") from exc
+    exported_program = capture_program(
+        model,
+        example_input,
+        dynamic_shapes=batch_dynamic_shapes(
+            dynamic_batch, batch_min=1, batch_max=batch_upper_bound
+        ),
+    )
 
     try:
         with _keep_batch_range(exported_program, dynamic_batch):
@@ -400,7 +393,7 @@ def _export_quantized(
     quantizer = _build_quantizer(delegate=delegate, per_channel=per_channel, is_dynamic=is_dynamic)
 
     try:
-        exported_module = torch.export.export(model, (example_input,)).module()
+        exported_module = capture_program(model, example_input).module()
 
         prepared = quantize_pt2e.prepare_pt2e(exported_module, quantizer)
 
@@ -413,14 +406,13 @@ def _export_quantized(
     except Exception as exc:
         raise ExportError(f"PT2E quantization failed: {exc}") from exc
 
-    try:
-        exported_program = torch.export.export(
-            quantized,
-            (example_input,),
-            dynamic_shapes=_dynamic_shapes(dynamic_batch, batch_upper_bound),
-        )
-    except Exception as exc:
-        raise ExportError(f"torch.export capture of quantized model failed: {exc}") from exc
+    exported_program = capture_program(
+        quantized,
+        example_input,
+        dynamic_shapes=batch_dynamic_shapes(
+            dynamic_batch, batch_min=1, batch_max=batch_upper_bound
+        ),
+    )
 
     try:
         with _keep_batch_range(exported_program, dynamic_batch):
