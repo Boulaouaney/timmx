@@ -10,7 +10,7 @@ import inspect
 import types
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Union, get_args, get_origin
+from typing import Annotated, get_args, get_origin
 
 from timmx.errors import ConfigurationError
 from timmx.export import create_builtin_registry
@@ -47,7 +47,7 @@ def export_model(backend: str, model_name: str, **options: object) -> Path:
 def _coerce_options(command: object, options: dict[str, object]) -> dict[str, object]:
     """Apply the conversions Typer does on the command line: str → Path, str → StrEnum choice."""
     parameters = inspect.signature(command, eval_str=True).parameters
-    unknown = sorted(set(options) - set(parameters))
+    unknown = sorted(set(options) - (set(parameters) - {"model_name"}))
     if unknown:
         raise ConfigurationError(
             f"Unknown option(s) {', '.join(unknown)}; valid options: "
@@ -61,11 +61,7 @@ def _coerce_options(command: object, options: dict[str, object]) -> dict[str, ob
 def _coerce(name: str, value: object, annotation: object) -> object:
     if get_origin(annotation) is Annotated:
         annotation = get_args(annotation)[0]
-    members = (
-        get_args(annotation)
-        if get_origin(annotation) in (types.UnionType, Union)
-        else (annotation,)
-    )
+    members = get_args(annotation) if get_origin(annotation) is types.UnionType else (annotation,)
     if not isinstance(value, str):
         return value
     for member in members:

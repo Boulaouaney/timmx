@@ -59,8 +59,7 @@ def build_export_app(registry: BackendRegistry | None = None) -> None:
             except TimmxError as exc:
                 console.print(f"[bold red]error:[/bold red] {exc}", highlight=False)
                 raise typer.Exit(code=2) from exc
-            if path is not None:  # backends written against the older None-returning contract
-                console.print(f"saved: {path}", highlight=False, markup=False, soft_wrap=True)
+            console.print(f"saved: {path}", highlight=False, markup=False, soft_wrap=True)
 
         export_app.command(name=name, help=backend.help)(wrapped)
 

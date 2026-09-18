@@ -44,6 +44,11 @@ def test_export_rejects_unknown_option() -> None:
         timmx.export_model("torchscript", "resnet18", not_a_flag=True)
 
 
+def test_export_rejects_model_name_as_option() -> None:
+    with pytest.raises(ConfigurationError, match=r"Unknown option\(s\) model_name"):
+        timmx.export_model("torchscript", "resnet18", model_name="resnet50")
+
+
 def test_export_rejects_unknown_choice() -> None:
     with pytest.raises(
         ConfigurationError, match="Unknown value 'bogus' for method; choices: trace, script"
