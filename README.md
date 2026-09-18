@@ -108,6 +108,10 @@ uv run timmx list --pretrained-only resnet      # only models with pretrained we
 uv run timmx export onnx resnet18 --pretrained --output ./artifacts/resnet18.onnx
 ```
 
+`--output` is optional for every backend: without it the file is written to the current
+directory as `<model name>.<ext>` (here `resnet18.onnx`; ncnn writes a `<model name>_ncnn/`
+directory). The resolved path is printed at the start of every export.
+
 Export a fine-tuned checkpoint with dynamic batching:
 
 ```bash

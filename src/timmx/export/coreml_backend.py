@@ -66,7 +66,7 @@ class CoreMLBackend(ExportBackend):
     def create_command(self) -> Callable[..., None]:
         def command(
             model_name: ModelNameArg,
-            output: OutputOpt,
+            output: OutputOpt = None,
             checkpoint: CheckpointOpt = None,
             pretrained: PretrainedOpt = False,
             num_classes: NumClassesOpt = None,
@@ -148,6 +148,7 @@ class CoreMLBackend(ExportBackend):
             prep = prepare_export(
                 model_name=model_name,
                 output=output,
+                default_suffix=".mlpackage" if convert_to == ConvertTo.mlprogram else ".mlmodel",
                 checkpoint=checkpoint,
                 pretrained=pretrained,
                 num_classes=num_classes,

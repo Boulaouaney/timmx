@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -55,7 +56,13 @@ SUPPORTED_INPUT_CHANNELS = frozenset({1, 3})
 # ---------------------------------------------------------------------------
 
 ModelNameArg = Annotated[str, typer.Argument(help="timm model name, e.g. resnet18")]
-OutputOpt = Annotated[Path, typer.Option(help="Path to write the exported model.")]
+OutputOpt = Annotated[
+    Path | None,
+    typer.Option(
+        help="Path to write the exported model (default: <model name>.<ext> in the current "
+        "directory)."
+    ),
+]
 CheckpointOpt = Annotated[Path | None, typer.Option(help="Path to a fine-tuned checkpoint.")]
 PretrainedOpt = Annotated[bool, typer.Option("--pretrained", help="Load timm pretrained weights.")]
 NumClassesOpt = Annotated[
@@ -88,10 +95,20 @@ class PreparedExport:
     torch_device: torch.device
 
 
+def default_output_path(model_name: str, suffix: str) -> Path:
+    """`<model name><suffix>` in the current directory, with path-unsafe characters replaced.
+
+    timm names can carry a pretrained tag (`resnet50.a1_in1k`) or a hub prefix
+    (`hf-hub:timm/resnet50.a1_in1k`); `:` and `/` become `_` so the name stays one file.
+    """
+    return Path.cwd() / (re.sub(r"[^\w.-]+", "_", model_name) + suffix)
+
+
 def prepare_export(
     *,
     model_name: str,
-    output: Path,
+    output: Path | None,
+    default_suffix: str,
     checkpoint: Path | None,
     pretrained: bool,
     num_classes: int | None,
@@ -107,9 +124,10 @@ def prepare_export(
 ) -> PreparedExport:
     """Validate common args, create the timm model, and build an example input.
 
-    Set *output_is_dir=True* when the backend writes to a directory rather than a
-    single file (e.g. ncnn).  The resolved path is then created as a directory;
-    otherwise its parent directory is created.
+    *output=None* resolves to :func:`default_output_path` with *default_suffix* (the backend's
+    file extension, or a directory suffix such as ``_ncnn``).  Set *output_is_dir=True* when the
+    backend writes to a directory rather than a single file (e.g. ncnn).  The resolved path is
+    then created as a directory; otherwise its parent directory is created.
     """
     validate_common_args(
         batch_size=batch_size,
@@ -121,7 +139,10 @@ def prepare_export(
     if (mean is not None or std is not None) and not normalize:
         raise ConfigurationError("--mean/--std require --normalize.")
 
+    if output is None:
+        output = default_output_path(model_name, default_suffix)
     output_path = Path(output).expanduser().resolve()
+    console.print(f"[dim]output: {output_path}[/dim]", highlight=False, soft_wrap=True)
     try:
         if output_is_dir:
             output_path.mkdir(parents=True, exist_ok=True)

@@ -52,8 +52,12 @@ class NcnnBackend(ExportBackend):
         def command(
             model_name: ModelNameArg,
             output: Annotated[
-                Path, typer.Option(help="Output directory to write the exported ncnn model files.")
-            ],
+                Path | None,
+                typer.Option(
+                    help="Output directory to write the exported ncnn model files (default: "
+                    "<model name>_ncnn in the current directory)."
+                ),
+            ] = None,
             checkpoint: CheckpointOpt = None,
             pretrained: PretrainedOpt = False,
             num_classes: NumClassesOpt = None,
@@ -82,6 +86,7 @@ class NcnnBackend(ExportBackend):
             prep = prepare_export(
                 model_name=model_name,
                 output=output,
+                default_suffix="_ncnn",
                 checkpoint=checkpoint,
                 pretrained=pretrained,
                 num_classes=num_classes,
