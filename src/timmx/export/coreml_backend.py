@@ -52,6 +52,13 @@ class ComputePrecision(StrEnum):
     float32 = "float32"
 
 
+class ComputeUnits(StrEnum):
+    all = "all"
+    cpu = "cpu"
+    cpu_gpu = "cpu-gpu"
+    cpu_ne = "cpu-ne"
+
+
 class CoreMLBackend(ExportBackend):
     name = "coreml"
     help = "Export a timm model to Core ML."
@@ -142,6 +149,14 @@ class CoreMLBackend(ExportBackend):
                 bool,
                 typer.Option(help="Reload the saved model and compare its output with PyTorch."),
             ] = True,
+            verify_compute_units: Annotated[
+                ComputeUnits,
+                typer.Option(
+                    help="Compute units Core ML may use while verifying (all, cpu, cpu-gpu, "
+                    "cpu-ne); pick the ones your app will request, since fp16 results can differ "
+                    "between the Neural Engine and the CPU."
+                ),
+            ] = ComputeUnits.all,
         ) -> Path:
             expected_suffix = ".mlpackage" if convert_to == ConvertTo.mlprogram else ".mlmodel"
             if output is not None and output.suffix != expected_suffix:
@@ -303,6 +318,7 @@ class CoreMLBackend(ExportBackend):
                     ct=ct,
                     image_input=image_input,
                     labels=labels,
+                    compute_units=verify_compute_units,
                 )
 
             return prep.output_path
@@ -353,6 +369,7 @@ def _verify_coreml_model(
     ct: object,
     image_input: bool = False,
     labels: list[str] | None = None,
+    compute_units: ComputeUnits = ComputeUnits.all,
 ) -> None:
     feed: object = example_input.cpu().numpy()
     if image_input:
@@ -366,7 +383,13 @@ def _verify_coreml_model(
             ct.models.MLModel(str(output_path), skip_model_load=True)
             console.print("[dim]verify: metadata only (Core ML inference needs macOS)[/dim]")
             return
-        loaded = ct.models.MLModel(str(output_path))
+        units = {
+            ComputeUnits.all: ct.ComputeUnit.ALL,
+            ComputeUnits.cpu: ct.ComputeUnit.CPU_ONLY,
+            ComputeUnits.cpu_gpu: ct.ComputeUnit.CPU_AND_GPU,
+            ComputeUnits.cpu_ne: ct.ComputeUnit.CPU_AND_NE,
+        }[ComputeUnits(compute_units)]
+        loaded = ct.models.MLModel(str(output_path), compute_units=units)
         prediction = loaded.predict({"input": feed})
         if labels is None:
             actual = prediction["output"]

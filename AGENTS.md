@@ -107,6 +107,10 @@ Runtime nuance:
   requires `--batch-size >= 2`. `--batch-upper-bound` applies to both sources (sets `max=` on
   `torch.export.Dim` for torch-export, `ct.RangeDim.upper_bound` for trace).
 - For `coreml`, `--compute-precision` is valid only when `--convert-to mlprogram`.
+- For `coreml`, `--verify-compute-units all|cpu|cpu-gpu|cpu-ne` picks the `ct.ComputeUnit` used to load
+  the saved model for verification (the app chooses its own at load time; the file is the same).
+  fp16 results differ between the Neural Engine and the CPU (an M1 benchmark showed cosine 0.995 vs
+  1.0 on efficientnet_b0), so verify with the units the app will request.
 - For `coreml`, `--image-input` passes `ct.ImageType(scale=1/255, color_layout=RGB|GRAYSCALE)` as
   `inputs=` to `ct.convert()` (works with both capture sources); it requires `--normalize` (mean/std
   stay in the wrapper because `ImageType` has a scalar `scale`, so per-channel std cannot be folded
