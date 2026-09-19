@@ -166,6 +166,9 @@ uv run timmx export onnx resnet18 --pretrained --no-slim --output ./artifacts/re
 ### OpenVINO
 
 Writes an OpenVINO IR pair (`.xml` + `.bin`); weights are compressed to fp16 by default.
+Verification runs the IR with `INFERENCE_PRECISION_HINT=f32`: OpenVINO's CPU plugin infers in fp16
+by default on Apple silicon, which breaks some models (ConvNeXt), so load with the f32 hint there
+if your outputs look wrong.
 
 ```bash
 uv run timmx export openvino resnet18 \

@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 
+from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
@@ -117,10 +118,26 @@ class OpenVINOBackend(ExportBackend):
 
             if verify:
                 try:
-                    compiled = ov.Core().compile_model(str(prep.output_path), "CPU")
+                    core = ov.Core()
+                    # The CPU plugin picks its inference precision per platform (f16 on Apple
+                    # silicon), and f16 inference breaks some models (convnext layer scale).
+                    # Verify the IR itself in f32 and tell the user when their default differs.
+                    default_precision = core.get_property(
+                        "CPU", "INFERENCE_PRECISION_HINT"
+                    ).get_type_name()
+                    compiled = core.compile_model(
+                        str(prep.output_path), "CPU", {"INFERENCE_PRECISION_HINT": "f32"}
+                    )
                     actual = compiled(prep.example_input.cpu().numpy())[0]
                 except Exception as exc:
                     raise ExportError(f"Saved OpenVINO model failed verification: {exc}") from exc
+                if "f32" not in default_precision:
+                    console.print(
+                        "[bold yellow]note:[/bold yellow] verified with INFERENCE_PRECISION_HINT=f32; "
+                        f"this CPU's OpenVINO default is {default_precision}, so set "
+                        "the hint at load time if outputs differ.",
+                        highlight=False,
+                    )
                 verify_outputs(
                     reference_output(prep.model, prep.example_input), actual, backend="OpenVINO"
                 )

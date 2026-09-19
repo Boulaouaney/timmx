@@ -100,3 +100,21 @@ def test_export_openvino_normalize_softmax_matches_wrapped_pytorch(tmp_path: Pat
     torch_out = wrapped(x).detach().numpy()
     np.testing.assert_allclose(ov_out, torch_out, atol=1e-4, rtol=1e-4)
     np.testing.assert_allclose(ov_out.sum(axis=-1), np.ones(2), atol=1e-4, rtol=0)
+
+
+def test_verify_pins_f32_inference_precision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    original = ov.Core.compile_model
+
+    def spy(self, model, device_name=None, config=None, *args, **kwargs):
+        captured["device"] = device_name
+        captured["config"] = config
+        return original(self, model, device_name, config, *args, **kwargs)
+
+    monkeypatch.setattr(ov.Core, "compile_model", spy)
+    OpenVINOBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.xml"))
+
+    assert captured["device"] == "CPU"
+    assert captured["config"] == {"INFERENCE_PRECISION_HINT": "f32"}

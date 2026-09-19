@@ -59,6 +59,11 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 addopts = "-q"
+# Third-party deprecation chatter (hundreds of lines per run) that hides real failures.
+filterwarnings = [
+  "ignore:Function _TORCH_OPS_REGISTRY.__contains__ is deprecated:DeprecationWarning",
+  "ignore:.*torch.jit.script.*is deprecated:FutureWarning",
+]
 testpaths = ["tests"]
 
 [tool.ruff]
