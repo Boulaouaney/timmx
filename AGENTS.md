@@ -259,6 +259,12 @@ Platform gaps: `coremltools` has no Python 3.14 wheels yet, so the `coreml` extr
 and manylinux x86_64; `litert-converter` and `ai-edge-tensorflow` have no Windows or Python 3.14
 wheels, so the `litert` extra needs Python `<=3.13` on Linux x86_64 or macOS arm64.
 
+Known CI flake: the `windows-latest` job intermittently dies with `Windows fatal exception: code
+0xc000001d` (illegal instruction) inside an OpenVINO `infer` call, on runs that do not touch
+OpenVINO. GitHub's Windows runner pool is heterogeneous and OpenVINO dispatches kernels per CPU, so
+the same commit passes on a rerun. Re-run the failed job (`gh run rerun <id> --failed`) and only
+investigate if it repeats on the same head commit.
+
 ## Scope Discipline
 
 - Keep changes surgical.
