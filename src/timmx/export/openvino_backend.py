@@ -4,8 +4,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
+import torch
 import typer
 
+from timmx.console import console
 from timmx.errors import ConfigurationError, ExportError
 from timmx.export.base import DependencyStatus, ExportBackend
 from timmx.export.common import (
@@ -116,18 +118,50 @@ class OpenVINOBackend(ExportBackend):
                 raise ExportError(f"Failed to save OpenVINO model: {exc}") from exc
 
             if verify:
-                try:
-                    compiled = ov.Core().compile_model(str(prep.output_path), "CPU")
-                    actual = compiled(prep.example_input.cpu().numpy())[0]
-                except Exception as exc:
-                    raise ExportError(f"Saved OpenVINO model failed verification: {exc}") from exc
-                verify_outputs(
-                    reference_output(prep.model, prep.example_input), actual, backend="OpenVINO"
-                )
+                _verify_ir(ov, prep.output_path, prep.model, prep.example_input)
 
             return prep.output_path
 
         return command
+
+
+def _verify_ir(
+    ov: object, output_path: Path, model: torch.nn.Module, example_input: torch.Tensor
+) -> None:
+    """Verify the IR the way it will be loaded, then in f32 if the platform default fails.
+
+    The CPU plugin picks its inference precision per platform: f16 on Apple silicon, bf16 on
+    AVX512_BF16/AMX x86, f32 elsewhere. Reduced precision turns some models into noise (convnext
+    layer scale) although the IR is correct, and OpenVINO ignores the hint when it is stored in
+    the IR, so the user has to set it at load time; the note tells them exactly when.
+    """
+    core = ov.Core()
+    expected = reference_output(model, example_input)
+    x = example_input.cpu().numpy()
+    try:
+        default_precision = core.get_property("CPU", "INFERENCE_PRECISION_HINT").get_type_name()
+        actual = core.compile_model(str(output_path), "CPU")(x)[0]
+    except Exception as exc:
+        raise ExportError(f"Saved OpenVINO model failed verification: {exc}") from exc
+    try:
+        verify_outputs(expected, actual, backend="OpenVINO")
+        return
+    except ExportError:
+        if default_precision == "f32":
+            raise
+    try:
+        actual = core.compile_model(str(output_path), "CPU", {"INFERENCE_PRECISION_HINT": "f32"})(
+            x
+        )[0]
+    except Exception as exc:
+        raise ExportError(f"Saved OpenVINO model failed verification: {exc}") from exc
+    verify_outputs(expected, actual, backend="OpenVINO")
+    console.print(
+        "[bold yellow]note:[/bold yellow] the output matches PyTorch only with "
+        f"INFERENCE_PRECISION_HINT=f32; this CPU's OpenVINO default is {default_precision}, which "
+        "gives wrong results for this model, so set the hint when loading the IR.",
+        highlight=False,
+    )
 
 
 def _import_openvino() -> object:

@@ -95,8 +95,70 @@ def test_export_openvino_normalize_softmax_matches_wrapped_pytorch(tmp_path: Pat
         )
     )
 
-    compiled = ov.Core().compile_model(str(output_path), "CPU")
+    compiled = ov.Core().compile_model(str(output_path), "CPU", {"INFERENCE_PRECISION_HINT": "f32"})
     ov_out = compiled(x.numpy())[0]
     torch_out = wrapped(x).detach().numpy()
     np.testing.assert_allclose(ov_out, torch_out, atol=1e-4, rtol=1e-4)
     np.testing.assert_allclose(ov_out.sum(axis=-1), np.ones(2), atol=1e-4, rtol=0)
+
+
+def _spy_compile(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    configs: list[object] = []
+    original = ov.Core.compile_model
+
+    def spy(self, model, device_name=None, config=None, *args, **kwargs):
+        configs.append(config)
+        return original(self, model, device_name, config, *args, **kwargs)
+
+    monkeypatch.setattr(ov.Core, "compile_model", spy)
+    return configs
+
+
+def test_verify_uses_platform_default_when_it_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configs = _spy_compile(monkeypatch)
+    OpenVINOBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.xml"))
+
+    assert configs == [None]
+    assert "INFERENCE_PRECISION_HINT" not in capsys.readouterr().out
+
+
+def test_verify_retries_in_f32_and_notes_when_default_precision_diverges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from timmx.errors import ExportError
+    from timmx.export import openvino_backend
+
+    configs = _spy_compile(monkeypatch)
+    monkeypatch.setattr(ov.Core, "get_property", lambda self, device, name: ov.Type.f16)
+    calls: list[object] = []
+
+    def fake_verify(expected, actual, *, backend):
+        calls.append(actual)
+        if len(calls) == 1:  # the platform-default pass "diverges"
+            raise ExportError("diverges")
+
+    monkeypatch.setattr(openvino_backend, "verify_outputs", fake_verify)
+    OpenVINOBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.xml"))
+
+    assert configs == [None, {"INFERENCE_PRECISION_HINT": "f32"}]
+    out = capsys.readouterr().out
+    assert "only with INFERENCE_PRECISION_HINT=f32" in out
+    assert "default is f16" in out
+
+
+def test_verify_raises_when_f32_also_diverges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from timmx.errors import ExportError
+    from timmx.export import openvino_backend
+
+    monkeypatch.setattr(ov.Core, "get_property", lambda self, device, name: ov.Type.f16)
+
+    def fake_verify(expected, actual, *, backend):
+        raise ExportError("diverges")
+
+    monkeypatch.setattr(openvino_backend, "verify_outputs", fake_verify)
+    with pytest.raises(ExportError, match="diverges"):
+        OpenVINOBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.xml"))
