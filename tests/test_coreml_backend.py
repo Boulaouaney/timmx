@@ -466,3 +466,9 @@ def test_export_image_input_grayscale_keeps_output_name(tmp_path: Path) -> None:
     assert image_type.colorSpace == ct.proto.FeatureTypes_pb2.ImageFeatureType.GRAYSCALE
     assert (image_type.width, image_type.height) == (32, 32)
     assert [o.name for o in spec.description.output] == ["output"]
+
+
+def test_rejects_unknown_verify_compute_units(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage") | {"verify_compute_units": "gpu-only"}
+    with pytest.raises(ConfigurationError, match="Unknown --verify-compute-units 'gpu-only'"):
+        CoreMLBackend().create_command()(**kwargs)

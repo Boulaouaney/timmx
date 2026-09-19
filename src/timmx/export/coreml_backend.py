@@ -378,24 +378,41 @@ def _verify_coreml_model(
         pixels = (torch.rand_like(example_input) * 255).round()
         example_input = pixels / 255
         feed = _to_pil_image(pixels)
+    # Resolved before the try below so an unusable choice (a bad value, or CPU_AND_NE on
+    # macOS < 13, which coremltools rejects at load time) is reported as a configuration
+    # problem rather than as the exported model failing verification.
     try:
-        if platform.system() != "Darwin":
-            ct.models.MLModel(str(output_path), skip_model_load=True)
-            console.print("[dim]verify: metadata only (Core ML inference needs macOS)[/dim]")
-            return
         units = {
             ComputeUnits.all: ct.ComputeUnit.ALL,
             ComputeUnits.cpu: ct.ComputeUnit.CPU_ONLY,
             ComputeUnits.cpu_gpu: ct.ComputeUnit.CPU_AND_GPU,
             ComputeUnits.cpu_ne: ct.ComputeUnit.CPU_AND_NE,
         }[ComputeUnits(compute_units)]
-        loaded = ct.models.MLModel(str(output_path), compute_units=units)
+    except ValueError as exc:
+        choices = ", ".join(unit.value for unit in ComputeUnits)
+        raise ConfigurationError(
+            f"Unknown --verify-compute-units {compute_units!r}; choices: {choices}."
+        ) from exc
+
+    try:
+        if platform.system() != "Darwin":
+            ct.models.MLModel(str(output_path), skip_model_load=True)
+            console.print("[dim]verify: metadata only (Core ML inference needs macOS)[/dim]")
+            return
+        try:
+            loaded = ct.models.MLModel(str(output_path), compute_units=units)
+        except ValueError as exc:
+            raise ConfigurationError(
+                f"Core ML cannot load with --verify-compute-units {compute_units}: {exc}"
+            ) from exc
         prediction = loaded.predict({"input": feed})
         if labels is None:
             actual = prediction["output"]
         else:
             probabilities = prediction["classLabel_probs"]
             actual = np.array([[probabilities[label] for label in labels]])
+    except ConfigurationError:
+        raise
     except Exception as exc:
         raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
     verify_outputs(reference_output(model, example_input), actual, backend="Core ML")
