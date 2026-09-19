@@ -128,10 +128,12 @@ Runtime nuance:
   only reloads the asset via `AIModelAsset.load()`.
 - For `openvino`, `--output` must be an `.xml` path (the `.bin` is written alongside); `--fp16`
   (default `True`) compresses weights via `ov.save_model(compress_to_fp16=...)`; `--dynamic-batch`
-  sets the batch dim to `-1`; verification compiles the IR on the OpenVINO `CPU` device with
-  `INFERENCE_PRECISION_HINT=f32` and runs a forward pass. The CPU plugin defaults to f16 inference
-  on Apple silicon (ARM), which turns convnext_tiny into noise (cosine -0.02) while the IR is fine,
-  so verification pins f32 and prints a note when the platform default is not f32.
+  sets the batch dim to `-1`; verification (`_verify_ir`) compiles the IR on the OpenVINO `CPU`
+  device with the platform default first and, if that diverges on a CPU whose default precision is
+  not f32 (f16 on Apple silicon, bf16 on AVX512_BF16/AMX x86), retries with
+  `INFERENCE_PRECISION_HINT=f32`; when only f32 passes it prints a note telling the user to set the
+  hint at load time (OpenVINO ignores the hint stored in the IR). convnext_tiny is the known case:
+  cosine -0.02 in f16, 1.0 in f32.
 - For `litert`, supported modes are `fp32`, `fp16`, `dynamic-int8`, and `int8`. `fp16` and
   `dynamic-int8` are post-training weight quantization of the saved `.tflite` via
   `ai-edge-quantizer` (no calibration); `int8` is static PT2E quantization (per-channel by
