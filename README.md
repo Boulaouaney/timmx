@@ -40,7 +40,7 @@ pip install 'timmx[coreml]'         # Core ML export
 pip install 'timmx[coreai]'         # Core AI export (Apple; runtime is macOS-only)
 pip install 'timmx[litert]'         # LiteRT/TFLite export
 pip install 'timmx[ncnn]'           # ncnn export (via pnnx; ncnn runtime for verification)
-pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML delegates)
+pip install 'timmx[executorch]'     # ExecuTorch export (XNNPack, CoreML, MLX delegates)
 pip install 'timmx[onnx,coreml]'    # multiple backends
 ```
 
@@ -479,6 +479,17 @@ uv run timmx export executorch resnet18 \
   --pretrained \
   --delegate coreml \
   --output ./artifacts/resnet18_coreml.pte
+```
+
+MLX delegation (Apple GPU through the [MLX](https://github.com/ml-explore/mlx) framework, macOS 14+
+on Apple silicon; fp32 only, static batch). Slower than the CoreML delegate on the Neural Engine,
+but it captures models Core ML cannot (Swin, for one) and keeps fp32 exactness:
+
+```bash
+uv run timmx export executorch swin_tiny_patch4_window7_224 \
+  --pretrained \
+  --delegate mlx \
+  --output ./artifacts/swin_tiny_mlx.pte
 ```
 
 CoreML with explicit fp32 compute precision (default is fp16):

@@ -94,7 +94,7 @@ Runtime nuance:
   `verify_outputs()` in `common.py`, which prints cosine similarity / max abs diff versus PyTorch
   and raises `ExportError` below `VERIFY_MIN_COSINE` (0.9), keeping the file. `onnx` verifies with
   `onnxruntime` (in the `onnx` extra), `ncnn` with the `ncnn` package (in the `ncnn` extra),
-  `executorch` with `executorch.runtime` (CoreML delegate: macOS only, skipped elsewhere),
+  `executorch` with `executorch.runtime` (CoreML and MLX delegates: macOS only, skipped elsewhere),
   `coreml` by prediction on macOS (metadata-only elsewhere), `litert` with the LiteRT
   interpreter (quantizing int8 inputs/outputs with the model's scale/zero point), `tensorrt` by
   deserializing the engine and running it with torch CUDA buffers (`execute_async_v3`).
@@ -176,7 +176,14 @@ Runtime nuance:
   Verification deserializes the engine and runs it with torch CUDA buffers.
 - For `tensorrt`, `--dynamic-batch` requires `--batch-size >= 2` and uses `torch.export.Dim` for
   dynamic shape capture. Supported precision modes are `fp32`, `fp16`, `int8`.
-- For `executorch`, delegates are selected via `--delegate xnnpack` (default) or `--delegate coreml`.
+- For `executorch`, delegates are selected via `--delegate xnnpack` (default), `--delegate coreml` or
+  `--delegate mlx` (Apple GPU through the MLX framework, executorch >= 1.5; `MLXPartitioner` from
+  `executorch.backends.mlx`). MLX is fp32-only here (its int4/int8 covers linear/embedding layers)
+  and rejects `--dynamic-batch`: the lowered program specializes reshapes to the export batch and
+  fails at runtime on other sizes. It runs only on Apple silicon (macOS 14+), so verification is
+  skipped elsewhere like the CoreML delegate. Benchmarked on an M1 it sits at PyTorch MPS speed,
+  3-20x behind the CoreML delegate on the Neural Engine, but it captured every timm model tried
+  (including Swin, which Core ML cannot) with cosine 1.0000.
 - For `executorch`, modes are `fp32`, `dynamic-int8` and `int8`. INT8 uses PT2E quantization with
   the appropriate quantizer per delegate (`XNNPACKQuantizer` for xnnpack, `CoreMLQuantizer` for
   coreml). `dynamic-int8` (xnnpack only, `is_dynamic=True`, no calibration data, incompatible with
