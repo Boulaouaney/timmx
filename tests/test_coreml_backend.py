@@ -1,3 +1,4 @@
+import platform
 from pathlib import Path
 
 import pytest
@@ -331,6 +332,24 @@ def test_export_coreml_int4_mlprogram(tmp_path: Path) -> None:
     assert "constexpr_lut_to_dense" in _mil_op_types(output_path)
 
 
+@pytest.mark.skipif(platform.system() != "Darwin", reason="Core ML inference needs macOS")
+def test_verify_compute_units_reach_the_loaded_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[object] = []
+    original = ct.models.MLModel.__init__
+
+    def spy(self, *args, **kwargs):
+        seen.append(kwargs.get("compute_units"))
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ct.models.MLModel, "__init__", spy)
+    kwargs = _build_kwargs(tmp_path / "resnet18.mlpackage") | {"verify_compute_units": "cpu"}
+    CoreMLBackend().create_command()(**kwargs)
+
+    assert ct.ComputeUnit.CPU_ONLY in seen
+
+
 def test_default_source_is_torch_export(tmp_path: Path) -> None:
     import inspect
 
@@ -447,3 +466,9 @@ def test_export_image_input_grayscale_keeps_output_name(tmp_path: Path) -> None:
     assert image_type.colorSpace == ct.proto.FeatureTypes_pb2.ImageFeatureType.GRAYSCALE
     assert (image_type.width, image_type.height) == (32, 32)
     assert [o.name for o in spec.description.output] == ["output"]
+
+
+def test_rejects_unknown_verify_compute_units(tmp_path: Path) -> None:
+    kwargs = _build_kwargs(tmp_path / "out.mlpackage") | {"verify_compute_units": "gpu-only"}
+    with pytest.raises(ConfigurationError, match="Unknown --verify-compute-units 'gpu-only'"):
+        CoreMLBackend().create_command()(**kwargs)

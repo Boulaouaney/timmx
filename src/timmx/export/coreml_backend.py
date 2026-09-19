@@ -52,6 +52,13 @@ class ComputePrecision(StrEnum):
     float32 = "float32"
 
 
+class ComputeUnits(StrEnum):
+    all = "all"
+    cpu = "cpu"
+    cpu_gpu = "cpu-gpu"
+    cpu_ne = "cpu-ne"
+
+
 class CoreMLBackend(ExportBackend):
     name = "coreml"
     help = "Export a timm model to Core ML."
@@ -142,6 +149,14 @@ class CoreMLBackend(ExportBackend):
                 bool,
                 typer.Option(help="Reload the saved model and compare its output with PyTorch."),
             ] = True,
+            verify_compute_units: Annotated[
+                ComputeUnits,
+                typer.Option(
+                    help="Compute units Core ML may use while verifying (all, cpu, cpu-gpu, "
+                    "cpu-ne); pick the ones your app will request, since fp16 results can differ "
+                    "between the Neural Engine and the CPU."
+                ),
+            ] = ComputeUnits.all,
         ) -> Path:
             expected_suffix = ".mlpackage" if convert_to == ConvertTo.mlprogram else ".mlmodel"
             if output is not None and output.suffix != expected_suffix:
@@ -303,6 +318,7 @@ class CoreMLBackend(ExportBackend):
                     ct=ct,
                     image_input=image_input,
                     labels=labels,
+                    compute_units=verify_compute_units,
                 )
 
             return prep.output_path
@@ -353,6 +369,7 @@ def _verify_coreml_model(
     ct: object,
     image_input: bool = False,
     labels: list[str] | None = None,
+    compute_units: ComputeUnits = ComputeUnits.all,
 ) -> None:
     feed: object = example_input.cpu().numpy()
     if image_input:
@@ -361,18 +378,41 @@ def _verify_coreml_model(
         pixels = (torch.rand_like(example_input) * 255).round()
         example_input = pixels / 255
         feed = _to_pil_image(pixels)
+    # Resolved before the try below so an unusable choice (a bad value, or CPU_AND_NE on
+    # macOS < 13, which coremltools rejects at load time) is reported as a configuration
+    # problem rather than as the exported model failing verification.
+    try:
+        units = {
+            ComputeUnits.all: ct.ComputeUnit.ALL,
+            ComputeUnits.cpu: ct.ComputeUnit.CPU_ONLY,
+            ComputeUnits.cpu_gpu: ct.ComputeUnit.CPU_AND_GPU,
+            ComputeUnits.cpu_ne: ct.ComputeUnit.CPU_AND_NE,
+        }[ComputeUnits(compute_units)]
+    except ValueError as exc:
+        choices = ", ".join(unit.value for unit in ComputeUnits)
+        raise ConfigurationError(
+            f"Unknown --verify-compute-units {compute_units!r}; choices: {choices}."
+        ) from exc
+
     try:
         if platform.system() != "Darwin":
             ct.models.MLModel(str(output_path), skip_model_load=True)
             console.print("[dim]verify: metadata only (Core ML inference needs macOS)[/dim]")
             return
-        loaded = ct.models.MLModel(str(output_path))
+        try:
+            loaded = ct.models.MLModel(str(output_path), compute_units=units)
+        except ValueError as exc:
+            raise ConfigurationError(
+                f"Core ML cannot load with --verify-compute-units {compute_units}: {exc}"
+            ) from exc
         prediction = loaded.predict({"input": feed})
         if labels is None:
             actual = prediction["output"]
         else:
             probabilities = prediction["classLabel_probs"]
             actual = np.array([[probabilities[label] for label in labels]])
+    except ConfigurationError:
+        raise
     except Exception as exc:
         raise ExportError(f"Saved Core ML model failed verification: {exc}") from exc
     verify_outputs(reference_output(model, example_input), actual, backend="Core ML")

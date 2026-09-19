@@ -99,7 +99,21 @@ output with PyTorch (cosine similarity and max abs diff are printed). An export 
 diverges (cosine similarity below `0.9`) fails with exit code 2 so silently broken artifacts
 never ship; the file is kept for inspection. Quantized exports are compared on the first
 calibration batch. Pass `--no-verify` to skip the check (for example when the runtime is not
-available on the export machine).
+available on the export machine). Core ML verification runs on `--verify-compute-units all` by
+default; pass `cpu`, `cpu-gpu` or `cpu-ne` to check the units your app will request, since fp16
+results on the Neural Engine and the CPU differ slightly.
+
+## Which backend on Apple hardware
+
+Measured on an M1 MacBook Pro (macOS 26.5, batch 1, 224×224, pretrained weights, median of 50
+runs): Core ML on the Neural Engine is 5 to 20× faster than every CPU or GPU path (resnet50 2.7 ms,
+vit_small 3.8 ms, convnext_tiny 3.6 ms), and the ExecuTorch CoreML delegate matches it exactly.
+Core ML on CPU only is still the fastest CPU option, ahead of ncnn, OpenVINO, ONNX Runtime and
+XNNPACK. ONNX Runtime's CoreML execution provider is 5 to 10× slower than coremltools on the same
+graph, PyTorch MPS and the ExecuTorch MLX delegate sit at GPU speed (20 to 45 ms), and PyTorch eager
+on CPU is the slowest of all. Core AI converts and verifies but does not specialize on this machine
+(roughly 400 ms per call whatever compute unit is preferred), so treat it as a format target, not a
+runtime to benchmark against.
 
 ## Model Info
 
@@ -633,14 +647,14 @@ This shows the timmx version, Python/torch versions, and a table of backend avai
 - [x] torch.export
 - [x] TensorRT
 - [x] TorchScript
-- [x] ExecuTorch (XNNPack + CoreML delegates)
+- [x] ExecuTorch (XNNPack, CoreML and MLX delegates)
 - [x] OpenVINO
 - [x] Core AI (via [coreai-torch](https://pypi.org/project/coreai-torch/))
 - [ ] TensorFlow (SavedModel / .pb)
-- [ ] TensorFlow.js
-- [ ] TFLite Edge TPU
 - [ ] MNN
 - [ ] PaddlePaddle
+
+TensorFlow.js (no release since 2024) and the Edge TPU compiler are no longer planned.
 
 ## Development
 
