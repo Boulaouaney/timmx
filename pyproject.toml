@@ -42,7 +42,7 @@ timmx = "timmx.cli:main"
 [project.optional-dependencies]
 coreai = ["coreai-torch>=0.4.2"]
 coreml = ["coremltools>=9.0", "scikit-learn"]
-executorch = ["executorch>=1.4"]
+executorch = ["executorch>=1.5"]
 litert = ["litert-torch>=0.9.4"]
 ncnn = ["ncnn", "pnnx"]
 onnx = ["onnx>=1.21", "onnxruntime>=1.29", "onnxscript>=0.7", "onnxslim"]

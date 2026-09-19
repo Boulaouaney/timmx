@@ -1,3 +1,4 @@
+import platform
 from pathlib import Path
 
 import pytest
@@ -141,6 +142,22 @@ def test_int8_calibration_normalization(
     assert output.exists()
     for key, value in expected.items():
         assert captured[key] == value
+
+
+def test_rejects_quantized_modes_with_mlx_delegate(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="--delegate mlx supports only --mode fp32"):
+        ExecuTorchBackend().create_command()(
+            **_build_kwargs(tmp_path / "m.pte", delegate="mlx", mode="int8")
+        )
+
+
+def test_rejects_dynamic_batch_with_mlx_delegate(tmp_path: Path) -> None:
+    with pytest.raises(
+        ConfigurationError, match="--dynamic-batch is not supported with --delegate mlx"
+    ):
+        ExecuTorchBackend().create_command()(
+            **_build_kwargs(tmp_path / "m.pte", delegate="mlx", dynamic_batch=True, batch_size=2)
+        )
 
 
 def test_rejects_dynamic_int8_with_coreml_delegate(tmp_path: Path) -> None:
@@ -393,6 +410,19 @@ def test_export_coreml_fp32_precision(tmp_path: Path) -> None:
     command = backend.create_command()
     command(**_build_kwargs(output, delegate="coreml", compute_precision="float32"))
     assert output.exists()
+    assert output.stat().st_size > 0
+
+
+requires_mlx = pytest.mark.skipif(
+    not (_has_executorch and platform.system() == "Darwin"),
+    reason="the MLX delegate runs only on Apple silicon",
+)
+
+
+@requires_mlx
+def test_export_mlx_delegate_verifies_on_macos(tmp_path: Path) -> None:
+    output = tmp_path / "model_mlx.pte"
+    ExecuTorchBackend().create_command()(**_build_kwargs(output, delegate="mlx"))
     assert output.stat().st_size > 0
 
 

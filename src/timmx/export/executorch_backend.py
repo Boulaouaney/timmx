@@ -40,6 +40,7 @@ from timmx.export.types import Device
 class ExecuTorchDelegate(StrEnum):
     xnnpack = "xnnpack"
     coreml = "coreml"
+    mlx = "mlx"
 
 
 class ExecuTorchMode(StrEnum):
@@ -82,7 +83,10 @@ class ExecuTorchBackend(ExportBackend):
             device: DeviceOpt = Device.cpu,
             delegate: Annotated[
                 ExecuTorchDelegate,
-                typer.Option(help="ExecuTorch delegate backend for hardware acceleration."),
+                typer.Option(
+                    help="ExecuTorch delegate: xnnpack (CPU, default), coreml (Apple Neural "
+                    "Engine/GPU/CPU) or mlx (Apple GPU via MLX; fp32, static batch)."
+                ),
             ] = ExecuTorchDelegate.xnnpack,
             mode: Annotated[
                 ExecuTorchMode,
@@ -177,6 +181,16 @@ class ExecuTorchBackend(ExportBackend):
                         "--mode dynamic-int8 does not support --dynamic-batch "
                         "(dynamic activation quantization specializes the batch dimension)."
                     )
+            if delegate == ExecuTorchDelegate.mlx and mode != ExecuTorchMode.fp32:
+                raise ConfigurationError(
+                    "--delegate mlx supports only --mode fp32 (its quantization covers linear "
+                    "and embedding layers, not convolutions)."
+                )
+            if delegate == ExecuTorchDelegate.mlx and dynamic_batch:
+                raise ConfigurationError(
+                    "--dynamic-batch is not supported with --delegate mlx "
+                    "(the MLX delegate specializes reshapes to the export batch size)."
+                )
             if compute_precision is not None and delegate != ExecuTorchDelegate.coreml:
                 raise ConfigurationError(
                     "--compute-precision is only supported with --delegate coreml."
@@ -292,8 +306,11 @@ class ExecuTorchBackend(ExportBackend):
 def _verify_pte(
     output_path: Path, runtime_input: torch.Tensor, expected: torch.Tensor, *, delegate: str
 ) -> None:
-    if delegate == ExecuTorchDelegate.coreml and platform.system() != "Darwin":
-        console.print("[dim]verify: skipped (the CoreML delegate only runs on macOS)[/dim]")
+    if (
+        delegate in (ExecuTorchDelegate.coreml, ExecuTorchDelegate.mlx)
+        and platform.system() != "Darwin"
+    ):
+        console.print(f"[dim]verify: skipped (the {delegate} delegate only runs on macOS)[/dim]")
         return
     try:
         from executorch.runtime import Runtime
@@ -508,6 +525,16 @@ def _build_partitioner(
         if compile_specs is not None:
             return [CoreMLPartitioner(compile_specs=compile_specs)]
         return [CoreMLPartitioner()]
+
+    if delegate == ExecuTorchDelegate.mlx:
+        try:
+            from executorch.backends.mlx import MLXPartitioner
+        except ImportError as exc:
+            raise ExportError(
+                "MLXPartitioner is required for --delegate mlx (executorch >= 1.5). "
+                "Install with: pip install 'timmx[executorch]'"
+            ) from exc
+        return [MLXPartitioner()]
 
     raise ConfigurationError(f"Unknown delegate: {delegate}")
 
