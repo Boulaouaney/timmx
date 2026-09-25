@@ -40,7 +40,7 @@ Repository = "https://github.com/Boulaouaney/timmx"
 timmx = "timmx.cli:main"
 
 [project.optional-dependencies]
-coreai = ["coreai-torch>=0.4.2"]
+coreai = ["coreai-torch>=0.4.3"]
 coreml = ["coremltools>=9.0", "scikit-learn"]
 executorch = ["executorch>=1.5"]
 litert = ["litert-torch>=0.9.4"]

@@ -54,8 +54,8 @@ pip install tensorrt  # Linux/Windows with CUDA only
 > against those (`torch>=2.13`). `coremltools` has no Python 3.14 wheels yet, so the
 > `coreml` extra needs Python `<=3.13`. `litert-torch` currently pins `torch<2.14`, so
 > installing the `litert` extra holds torch one release back; it also has no Windows or
-> Python 3.14 wheels. `coreai-core` ships wheels only for Python `<=3.13` on macOS 26+
-> (arm64) and manylinux x86_64.
+> Python 3.14 wheels. `coreai-core` ships wheels only for macOS 26+ (arm64) and manylinux
+> x86_64.
 
 Check which backends are available:
 
