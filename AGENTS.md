@@ -122,9 +122,10 @@ Runtime nuance:
   `AIProgram.save_asset()` creates (and replaces if it already exists), so `prepare_export` is
   called without `output_is_dir`. Conversion is `torch.export.export()` →
   `run_decompositions(coreai_torch.get_decomp_table())` → `TorchConverter().add_exported_program(
-  ..., input_names=["input"], output_names=["output"], entrypoint_name="main")` → `to_coreai()` →
-  `optimize()`. The decomp table matters: it keeps composite ops (SDPA, `instance_norm`,
-  `pixel_shuffle`) intact for the runtime. `--dynamic-batch` requires `--batch-size >= 2` and then
+  ..., input_names=["input"], output_names=["output"], entrypoint_name="main")` → `to_coreai()`,
+  which returns an already-optimized program (coreai-torch 0.4.3 removed `optimize()`). The decomp
+  table matters: it keeps composite ops (SDPA, `instance_norm`, `pixel_shuffle`) intact for the
+  runtime. `--dynamic-batch` requires `--batch-size >= 2` and then
   accepts any batch size at runtime (no upper bound to plan for, unlike Core ML/ExecuTorch).
   Verification is macOS-only — `coreai.runtime` is async (`await AIModel.load(path)`, then
   `await function({...})`), so it runs under `asyncio.run()`; conversion itself works on Linux, but
@@ -263,7 +264,7 @@ litert-torch allows, so the torch floor stays one release behind the latest whil
 lags (it has trailed each torch release by 1 to 13 weeks).
 
 Platform gaps: `coremltools` has no Python 3.14 wheels yet, so the `coreml` extra needs Python
-`<=3.13`; `coreai-core` likewise ships no Python 3.14 wheels and only builds for macOS 26+ arm64
+`<=3.13`; `coreai-core` only builds for macOS 26+ arm64
 and manylinux x86_64; `litert-converter` and `ai-edge-tensorflow` have no Windows or Python 3.14
 wheels, so the `litert` extra needs Python `<=3.13` on Linux x86_64 or macOS arm64.
 

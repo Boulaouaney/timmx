@@ -131,7 +131,6 @@ class CoreAIBackend(ExportBackend):
                     )
                     .to_coreai()
                 )
-                program.optimize()
             except Exception as exc:
                 raise ExportError(f"Core AI conversion failed: {exc}") from exc
 
