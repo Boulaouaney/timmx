@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import platform
 from collections.abc import Callable
 from pathlib import Path
@@ -73,6 +74,14 @@ class CoreAIBackend(ExportBackend):
                 bool, typer.Option("--dynamic-batch", help="Mark batch axis as dynamic.")
             ] = False,
             device: DeviceOpt = Device.cpu,
+            half: Annotated[
+                bool,
+                typer.Option(
+                    "--half",
+                    help="Convert the model, its input and its output to float16, which the "
+                    "Neural Engine requires; verification then runs on the Neural Engine.",
+                ),
+            ] = False,
             verify: Annotated[
                 bool,
                 typer.Option(help="Reload the saved asset and compare its output with PyTorch."),
@@ -108,8 +117,19 @@ class CoreAIBackend(ExportBackend):
                 std=std,
             )
 
+            export_model, example_input = prep.model, prep.example_input
+            if half:
+                export_model = copy.deepcopy(prep.model).half()
+                example_input = prep.example_input.half()
+                # create_timm_model's exportable=True turns timm's fused attention off (old ONNX
+                # export could not take SDPA). get_decomp_table() keeps SDPA whole for the
+                # runtime's own kernel, without which the Neural Engine runs ViT ~10x slower.
+                for module in export_model.modules():
+                    if hasattr(module, "fused_attn"):
+                        module.fused_attn = True
+
             exported_program = capture_program(
-                prep.model, prep.example_input, dynamic_shapes=batch_dynamic_shapes(dynamic_batch)
+                export_model, example_input, dynamic_shapes=batch_dynamic_shapes(dynamic_batch)
             )
             try:
                 # get_decomp_table() keeps composite ops (SDPA, instance_norm, pixel_shuffle)
@@ -142,8 +162,9 @@ class CoreAIBackend(ExportBackend):
             if verify:
                 _verify_asset(
                     prep.output_path,
-                    prep.example_input,
+                    example_input,
                     reference_output(prep.model, prep.example_input),
+                    neural_engine=half,
                 )
 
             return prep.output_path
@@ -161,8 +182,13 @@ def _import_coreai_torch() -> object:
     return coreai_torch
 
 
-def _verify_asset(output_path: Path, example_input: torch.Tensor, expected: torch.Tensor) -> None:
+def _verify_asset(
+    output_path: Path, example_input: torch.Tensor, expected: torch.Tensor, *, neural_engine: bool
+) -> None:
     """Reload the asset and, on macOS, run it against the PyTorch reference.
+
+    With `neural_engine` the runtime is asked to prefer the Neural Engine, which only takes
+    float16 graphs and which the default specialization does not prefer.
 
     The Core AI runtime only executes on Apple platforms (loading an asset on Linux fails with
     an opaque "No such file or directory"), so elsewhere we can only check that what we wrote
@@ -175,16 +201,24 @@ def _verify_asset(output_path: Path, example_input: torch.Tensor, expected: torc
             AIModelAsset.load(output_path)
             console.print("[dim]verify: asset only (Core AI inference needs macOS)[/dim]")
             return
-        actual = asyncio.run(_run_asset(output_path, example_input))
+        actual = asyncio.run(_run_asset(output_path, example_input, neural_engine))
     except Exception as exc:
         raise ExportError(f"Saved Core AI asset failed verification: {exc}") from exc
     verify_outputs(expected, actual, backend="Core AI")
 
 
-async def _run_asset(output_path: Path, example_input: torch.Tensor) -> object:
-    from coreai.runtime import AIModel, NDArray
+async def _run_asset(output_path: Path, example_input: torch.Tensor, neural_engine: bool) -> object:
+    from coreai.runtime import AIModel, ComputeUnitKind, NDArray, SpecializationOptions
 
-    model = await AIModel.load(output_path)
+    options = None
+    if neural_engine:
+        # Apple's Neural Engine compiler aborts the process on some attention layouts (twins,
+        # hiera); say what is running so the abort is not a mystery.
+        console.print("[dim]verify: specializing for the Neural Engine[/dim]")
+        options = SpecializationOptions.from_preferred_compute_unit_kind(
+            ComputeUnitKind.neural_engine()
+        )
+    model = await AIModel.load(output_path, options)
     function = model.load_function(ENTRYPOINT)
     outputs = await function({"input": NDArray(example_input.detach().cpu())})
     return outputs["output"].numpy()

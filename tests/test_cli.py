@@ -42,6 +42,7 @@ def test_export_coreai_help_shows_options() -> None:
     assert result.exit_code == 0
     assert "--output" in _plain(result.output)
     assert "--dynamic-batch" in _plain(result.output)
+    assert "--half" in _plain(result.output)
     assert "--verify" in _plain(result.output)
     assert "--normalize" in _plain(result.output)
     assert "--softmax" in _plain(result.output)

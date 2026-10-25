@@ -30,6 +30,7 @@ def _build_kwargs(output_path: Path, **overrides: object) -> dict:
         "input_size": (3, 32, 32),
         "dynamic_batch": False,
         "device": "cpu",
+        "half": False,
         "verify": True,
         "normalize": False,
         "softmax": False,
@@ -40,11 +41,17 @@ def _build_kwargs(output_path: Path, **overrides: object) -> dict:
     return kwargs
 
 
-def _run_asset(output_path: Path, x: torch.Tensor) -> np.ndarray:
-    from coreai.runtime import AIModel, NDArray
+def _run_asset(output_path: Path, x: torch.Tensor, *, neural_engine: bool = False) -> np.ndarray:
+    from coreai.runtime import AIModel, ComputeUnitKind, NDArray, SpecializationOptions
+
+    options = None
+    if neural_engine:
+        options = SpecializationOptions.from_preferred_compute_unit_kind(
+            ComputeUnitKind.neural_engine()
+        )
 
     async def run() -> np.ndarray:
-        model = await AIModel.load(output_path)
+        model = await AIModel.load(output_path, options)
         function = model.load_function("main")
         assert function.desc.input_names == ["input"]
         assert function.desc.output_names == ["output"]
@@ -91,6 +98,25 @@ def test_export_coreai_names_io_and_matches_pytorch(tmp_path: Path) -> None:
     np.testing.assert_allclose(
         _run_asset(output_path, x), reference(x).detach().numpy(), atol=1e-4, rtol=1e-4
     )
+
+
+@requires_runtime
+def test_half_export_has_float16_io_and_matches_pytorch(tmp_path: Path) -> None:
+    seed = 789
+    x = torch.rand(1, 3, 32, 32)
+
+    torch.manual_seed(seed)
+    reference = create_timm_model(
+        "resnet18", pretrained=False, checkpoint=None, num_classes=None, in_chans=None
+    ).eval()
+
+    output_path = tmp_path / "resnet18_half.aimodel"
+    torch.manual_seed(seed)
+    CoreAIBackend().create_command()(**_build_kwargs(output_path, half=True))
+
+    actual = _run_asset(output_path, x.half(), neural_engine=True)
+    assert actual.dtype == np.float16
+    np.testing.assert_allclose(actual, reference(x).detach().numpy(), atol=1e-2, rtol=1e-2)
 
 
 @requires_runtime

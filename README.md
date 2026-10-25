@@ -111,9 +111,12 @@ vit_small 3.8 ms, convnext_tiny 3.6 ms), and the ExecuTorch CoreML delegate matc
 Core ML on CPU only is still the fastest CPU option, ahead of ncnn, OpenVINO, ONNX Runtime and
 XNNPACK. ONNX Runtime's CoreML execution provider is 5 to 10× slower than coremltools on the same
 graph, PyTorch MPS and the ExecuTorch MLX delegate sit at GPU speed (20 to 45 ms), and PyTorch eager
-on CPU is the slowest of all. Core AI converts and verifies but does not specialize on this machine
-(roughly 400 ms per call whatever compute unit is preferred), so treat it as a format target, not a
-runtime to benchmark against.
+on CPU is the slowest of all.
+
+Core AI needs macOS 27 to run at speed (on macOS 26.5 it took roughly 400 ms per call). On the same
+M1 with macOS 27.0.1, a default export runs on the GPU (resnet50 8.4 ms, vit_small 9.6 ms), and a
+`--half` export loaded with the Neural Engine preferred is the fastest path measured: resnet50
+1.9 ms, vit_small 3.0 ms, efficientnet_b0 0.8 ms, mobilenetv4_conv_small 0.6 ms.
 
 ## Model Info
 
@@ -223,6 +226,24 @@ uv run timmx export coreai resnet18 \
   --dynamic-batch \
   --output ./artifacts/resnet18_dynamic.aimodel
 ```
+
+Neural Engine: `--half` converts the model to float16, including its input and output (the Neural
+Engine rejects float32 inputs and outputs), and verifies on the Neural Engine. Feed it float16
+tensors, and request the Neural Engine when loading — the default specialization keeps the model on
+the GPU (in Python:
+`SpecializationOptions.from_preferred_compute_unit_kind(ComputeUnitKind.neural_engine())`):
+
+```bash
+uv run timmx export coreai vit_small_patch16_224 \
+  --pretrained \
+  --half \
+  --output ./artifacts/vit_small_fp16.aimodel
+```
+
+> **Note:** Apple's Neural Engine compiler aborts the whole process on some attention layouts
+> (twins and hiera so far), so a `--half` export of those dies during verification with exit code
+> 134. An app that requests the Neural Engine for such a model would crash the same way; export it
+> without `--half`.
 
 > **Note:** conversion works on macOS and Linux, but the Core AI runtime only executes on Apple
 > platforms. On Linux `--verify` therefore only checks that the asset reads back, and cannot
