@@ -137,12 +137,15 @@ Runtime nuance:
   TensorRT `_HalfIO` approach) silently fall back to the GPU. Only fp16 graphs reach the Neural
   Engine, and only when the app asks for it
   (`SpecializationOptions.from_preferred_compute_unit_kind(ComputeUnitKind.neural_engine())`);
-  the default specialization stays on the GPU. `--half` verifies with that preference. It also sets
-  `fused_attn = True` on the copy's modules: `create_timm_model`'s `exportable=True` turns timm's
-  fused attention off, and without SDPA the Neural Engine runs ViT/DeiT at ~30 ms instead of ~3 ms
-  (M1, macOS 27). fp32 exports keep timm's unfused attention (same speed either way). Apple's
-  Neural Engine compiler aborts the whole process (SIGABRT, exit 134, `ANERegionFormationPass`)
-  on twins and hiera attention in fp16, so `--half` verification cannot raise a clean error there;
+  the default specialization stays on the GPU. `--half` verifies with that preference. The
+  `--normalize`/`--softmax` wrapper goes to fp16 with the rest: unlike TensorRT, Core AI's fp16
+  softmax is fine (cosine >= 0.9985 on the Neural Engine for resnet50/vit_small/effnet_b0/mnv4).
+  It also sets `fused_attn = True` on the copy's modules: `create_timm_model`'s `exportable=True`
+  turns timm's fused attention off, and without SDPA the Neural Engine runs ViT/DeiT at ~30 ms
+  instead of ~3 ms (M1, macOS 27). fp32 exports keep timm's unfused attention (same speed either
+  way). Apple's Neural Engine compiler aborts the whole process (SIGABRT, exit 134,
+  `ANERegionFormationPass`) on twins and hiera attention in fp16, so `--half` verification cannot
+  raise a clean error there;
   after such aborts this M1 refused every default-option fp16 load with `kIOReturnNoMemory`
   (`aned`: `DoProgramCreate failed: 0xe00002bd`) while Neural Engine-preferred loads kept working,
   which is why the `--half` test loads with the Neural Engine preference.

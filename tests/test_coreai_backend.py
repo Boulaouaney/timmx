@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from timmx.errors import ConfigurationError
+from timmx.export import coreai_backend
 from timmx.export.common import create_timm_model, wrap_with_preprocessing
 from timmx.export.coreai_backend import CoreAIBackend
 
@@ -98,6 +99,34 @@ def test_export_coreai_names_io_and_matches_pytorch(tmp_path: Path) -> None:
     np.testing.assert_allclose(
         _run_asset(output_path, x), reference(x).detach().numpy(), atol=1e-4, rtol=1e-4
     )
+
+
+def test_half_captures_float16_model_with_fused_attention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    capture_program = coreai_backend.capture_program
+
+    def spy(model: torch.nn.Module, example_input: torch.Tensor, **kwargs: object) -> object:
+        captured.update(model=model, example_input=example_input)
+        return capture_program(model, example_input, **kwargs)
+
+    monkeypatch.setattr(coreai_backend, "capture_program", spy)
+    CoreAIBackend().create_command()(
+        **_build_kwargs(
+            tmp_path / "vit.aimodel",
+            model_name="vit_tiny_patch16_224",
+            input_size=None,
+            half=True,
+            verify=False,
+        )
+    )
+
+    model = captured["model"]
+    assert captured["example_input"].dtype == torch.float16
+    assert next(model.parameters()).dtype == torch.float16
+    attention = [m for m in model.modules() if hasattr(m, "fused_attn")]
+    assert attention and all(m.fused_attn for m in attention)
 
 
 @requires_runtime
