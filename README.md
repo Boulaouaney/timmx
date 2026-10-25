@@ -228,10 +228,10 @@ uv run timmx export coreai resnet18 \
 ```
 
 Neural Engine: `--half` converts the model to float16, including its input and output (the Neural
-Engine rejects float32 inputs and outputs), and verifies on the Neural Engine. Feed it float16
-tensors, and request the Neural Engine when loading — the default specialization keeps the model on
-the GPU (in Python:
-`SpecializationOptions.from_preferred_compute_unit_kind(ComputeUnitKind.neural_engine())`):
+Engine rejects float32 inputs and outputs). Feed it float16 tensors, and request the Neural Engine
+when loading, since the default specialization keeps the model on the GPU (in Python:
+`SpecializationOptions.from_preferred_compute_unit_kind(ComputeUnitKind.neural_engine())`, which
+needs macOS 27; verification requests it the same way):
 
 ```bash
 uv run timmx export coreai vit_small_patch16_224 \
@@ -240,10 +240,11 @@ uv run timmx export coreai vit_small_patch16_224 \
   --output ./artifacts/vit_small_fp16.aimodel
 ```
 
-> **Note:** Apple's Neural Engine compiler aborts the whole process on some attention layouts
-> (twins and hiera so far), so a `--half` export of those dies during verification with exit code
-> 134. An app that requests the Neural Engine for such a model would crash the same way; export it
-> without `--half`.
+> **Note:** `--half` also turns timm's fused attention (SDPA) back on, which the Neural Engine
+> needs for transformer speed (vit_small 3 ms instead of 30 ms on an M1). Models whose attention
+> runs over 5-D tensors (twins, hiera) keep the unfused form, because Apple's Neural Engine compiler
+> aborts the process on 5-D SDPA. hiera's `--half` export still fails verification: the Neural
+> Engine returns wrong outputs for it, although PyTorch's own float16 run is fine.
 
 > **Note:** conversion works on macOS and Linux, but the Core AI runtime only executes on Apple
 > platforms. On Linux `--verify` therefore only checks that the asset reads back, and cannot

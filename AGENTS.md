@@ -131,24 +131,30 @@ Runtime nuance:
   `await function({...})`), so it runs under `asyncio.run()`; conversion itself works on Linux, but
   loading an asset there fails with an opaque "No such file or directory", so off-Darwin `--verify`
   only reloads the asset via `AIModelAsset.load()`.
-- For `coreai`, `--half` exports a deep copy of the model with `.half()` and a float16 sample
-  input, so the asset's input and output are float16 too: the Neural Engine rejects float32 I/O
-  ("F32 I/Os not supported for this ANE architecture" on an M1), so casts at the boundary (the
-  TensorRT `_HalfIO` approach) silently fall back to the GPU. Only fp16 graphs reach the Neural
-  Engine, and only when the app asks for it
-  (`SpecializationOptions.from_preferred_compute_unit_kind(ComputeUnitKind.neural_engine())`);
-  the default specialization stays on the GPU. `--half` verifies with that preference. The
-  `--normalize`/`--softmax` wrapper goes to fp16 with the rest: unlike TensorRT, Core AI's fp16
-  softmax is fine (cosine >= 0.9985 on the Neural Engine for resnet50/vit_small/effnet_b0/mnv4).
-  It also sets `fused_attn = True` on the copy's modules: `create_timm_model`'s `exportable=True`
-  turns timm's fused attention off, and without SDPA the Neural Engine runs ViT/DeiT at ~30 ms
-  instead of ~3 ms (M1, macOS 27). fp32 exports keep timm's unfused attention (same speed either
-  way). Apple's Neural Engine compiler aborts the whole process (SIGABRT, exit 134,
-  `ANERegionFormationPass`) on twins and hiera attention in fp16, so `--half` verification cannot
-  raise a clean error there;
-  after such aborts this M1 refused every default-option fp16 load with `kIOReturnNoMemory`
-  (`aned`: `DoProgramCreate failed: 0xe00002bd`) while Neural Engine-preferred loads kept working,
-  which is why the `--half` test loads with the Neural Engine preference.
+- For `coreai`, `--half` computes the fp32 reference first, then converts `prep.model` and the
+  sample input to float16 in place, so the asset's input and output are float16 too: the Neural
+  Engine rejects float32 I/O ("F32 I/Os not supported for this ANE architecture" on an M1), and
+  casts at the boundary (the TensorRT `_HalfIO` approach) silently fall back to the GPU. Only fp16
+  graphs reach the Neural Engine, and only when the app asks for it; the default specialization
+  stays on the GPU. `_neural_engine_options()` builds that request
+  (`SpecializationOptions.from_preferred_compute_unit_kind(ComputeUnitKind.neural_engine())`) and
+  returns `None` when `SpecializationOptions.is_supported()` is False: the in-package runtime used
+  before macOS 27 (CI's `macos-26-arm64` VM) fails any load that is given options ("Failed to load
+  model with specialization ... AIModelError error 1"). The `--normalize`/`--softmax` wrapper goes
+  to fp16 with the rest: unlike TensorRT, Core AI's fp16 softmax is fine (cosine >= 0.9985 on the
+  Neural Engine for resnet50/vit_small/effnet_b0/mnv4). `--half` also sets `fused_attn = True`:
+  `create_timm_model`'s `exportable=True` turns timm's fused attention off, and without SDPA the
+  Neural Engine runs ViT/DeiT at ~30 ms instead of ~3 ms (M1, macOS 27); fp32 exports keep timm's
+  unfused attention (same speed either way). Apple's Neural Engine compiler aborts the whole
+  process (SIGABRT, exit 134, `ANERegionFormationPass`) on SDPA over 5-D tensors (twins'
+  `LocallyGroupedAttn`, hiera's `MaskUnitAttention`; reproduced with a bare 5-D SDPA module), so
+  when `_has_sdpa_over_4d()` finds one in the decomposed program the model is re-captured with
+  fused attention off. hiera `--half` still fails verification (cosine -0.01 on the Neural Engine;
+  PyTorch fp16 is 0.99999). After the aborts this M1 refused every default-option fp16 load with
+  `kIOReturnNoMemory` (`aned`: `DoProgramCreate failed: 0xe00002bd`) while Neural Engine-preferred
+  loads kept working, which is why the `--half` test loads with `_neural_engine_options()`.
+  Verification runs `asyncio.run()` on a worker thread so it also works under a running event loop
+  (Jupyter).
 - For `openvino`, `--output` must be an `.xml` path (the `.bin` is written alongside); `--fp16`
   (default `True`) compresses weights via `ov.save_model(compress_to_fp16=...)`; `--dynamic-batch`
   sets the batch dim to `-1`; verification (`_verify_ir`) compiles the IR on the OpenVINO `CPU`

@@ -43,13 +43,9 @@ def _build_kwargs(output_path: Path, **overrides: object) -> dict:
 
 
 def _run_asset(output_path: Path, x: torch.Tensor, *, neural_engine: bool = False) -> np.ndarray:
-    from coreai.runtime import AIModel, ComputeUnitKind, NDArray, SpecializationOptions
+    from coreai.runtime import AIModel, NDArray
 
-    options = None
-    if neural_engine:
-        options = SpecializationOptions.from_preferred_compute_unit_kind(
-            ComputeUnitKind.neural_engine()
-        )
+    options = coreai_backend._neural_engine_options() if neural_engine else None
 
     async def run() -> np.ndarray:
         model = await AIModel.load(output_path, options)
@@ -101,32 +97,59 @@ def test_export_coreai_names_io_and_matches_pytorch(tmp_path: Path) -> None:
     )
 
 
-def test_half_captures_float16_model_with_fused_attention(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    captured: dict[str, object] = {}
+class _Captured(Exception):
+    pass
+
+
+def _spy_on_capture(monkeypatch: pytest.MonkeyPatch, stop_at: int) -> list[tuple]:
+    """Record (weight dtype, input dtype, fused_attn flags) per capture; stop at the `stop_at`th."""
+    calls: list[tuple] = []
     capture_program = coreai_backend.capture_program
 
     def spy(model: torch.nn.Module, example_input: torch.Tensor, **kwargs: object) -> object:
-        captured.update(model=model, example_input=example_input)
+        fused = [m.fused_attn for m in model.modules() if hasattr(m, "fused_attn")]
+        calls.append((next(model.parameters()).dtype, example_input.dtype, fused))
+        if len(calls) == stop_at:
+            raise _Captured
         return capture_program(model, example_input, **kwargs)
 
     monkeypatch.setattr(coreai_backend, "capture_program", spy)
-    CoreAIBackend().create_command()(
-        **_build_kwargs(
-            tmp_path / "vit.aimodel",
-            model_name="vit_tiny_patch16_224",
-            input_size=None,
-            half=True,
-            verify=False,
-        )
-    )
+    return calls
 
-    model = captured["model"]
-    assert captured["example_input"].dtype == torch.float16
-    assert next(model.parameters()).dtype == torch.float16
-    attention = [m for m in model.modules() if hasattr(m, "fused_attn")]
-    assert attention and all(m.fused_attn for m in attention)
+
+def test_half_captures_float16_model_with_fused_attention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _spy_on_capture(monkeypatch, stop_at=1)
+    with pytest.raises(_Captured):
+        CoreAIBackend().create_command()(
+            **_build_kwargs(
+                tmp_path / "vit.aimodel",
+                model_name="vit_tiny_patch16_224",
+                input_size=None,
+                half=True,
+            )
+        )
+
+    [(weight_dtype, input_dtype, fused)] = calls
+    assert weight_dtype == input_dtype == torch.float16
+    assert fused and all(fused)
+
+
+def test_half_unfuses_attention_over_5d_tensors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # twins' locally grouped attention runs SDPA on 5-D tensors, which aborts the ANE compiler.
+    calls = _spy_on_capture(monkeypatch, stop_at=2)
+    with pytest.raises(_Captured):
+        CoreAIBackend().create_command()(
+            **_build_kwargs(
+                tmp_path / "twins.aimodel", model_name="twins_svt_small", input_size=None, half=True
+            )
+        )
+
+    assert [all(fused) for _, _, fused in calls] == [True, False]
+    assert not any(calls[1][2])
 
 
 @requires_runtime
@@ -146,6 +169,14 @@ def test_half_export_has_float16_io_and_matches_pytorch(tmp_path: Path) -> None:
     actual = _run_asset(output_path, x.half(), neural_engine=True)
     assert actual.dtype == np.float16
     np.testing.assert_allclose(actual, reference(x).detach().numpy(), atol=1e-2, rtol=1e-2)
+
+
+@requires_runtime
+def test_verify_works_inside_a_running_event_loop(tmp_path: Path) -> None:
+    async def export() -> Path:
+        return CoreAIBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.aimodel"))
+
+    assert asyncio.run(export()).is_dir()
 
 
 @requires_runtime
