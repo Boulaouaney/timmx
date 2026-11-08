@@ -149,15 +149,15 @@ Runtime nuance:
   Neural Engine but attention models silently stay at GPU speed even when it is preferred (vit_small
   8.2 ms fused or unfused, no `aned` error). Apple's Neural Engine compiler aborted the whole
   process on 27.0.1, not retested since (SIGABRT, exit 134, `ANERegionFormationPass`) on SDPA over
-  5-D tensors (twins'
-  `LocallyGroupedAttn`, hiera's `MaskUnitAttention`; reproduced with a bare 5-D SDPA module), so
-  when `_has_sdpa_over_4d()` finds one in the decomposed program the model is re-captured with
-  fused attention off. hiera `--half` failed verification on 27.0.1 (cosine -0.01 on the Neural
-  Engine; PyTorch fp16 is 0.99999) and passes on 27.2 at GPU speed. Load fp16 assets with options: on an M1 (macOS 27.0 to 27.2,
-  coreai-core 1.0.0b3) `AIModel.load(path)` without any fails in `aned` (`DoProgramCreate failed`,
-  `0xe00002bd` on 27.0.1, `0xe00002e2` on 27.2, also after a reboot), while
-  `SpecializationOptions.default()` (GPU) and the Neural Engine preference both load them, and fp32
-  assets load fine without options. That is why the `--half` test uses `_neural_engine_options()`.
+  5-D tensors (twins' `LocallyGroupedAttn`, hiera's `MaskUnitAttention`; reproduced with a bare 5-D
+  SDPA module), so when `_has_sdpa_over_4d()` finds one in the decomposed program the model is
+  re-captured with fused attention off. hiera `--half` failed verification on 27.0.1 (cosine -0.01
+  on the Neural Engine; PyTorch fp16 is 0.99999) and passes on 27.2 at GPU speed. Load fp16 assets
+  with options: on an M1 (macOS 27.0 to 27.2, coreai-core 1.0.0b3) `AIModel.load(path)` without any
+  fails in `aned` (`DoProgramCreate failed`, `0xe00002bd` on 27.0.1, `0xe00002e2` on 27.2, also
+  after a reboot), while `SpecializationOptions.default()` (GPU) and the Neural Engine preference
+  both load them, and fp32 assets load fine without options. That is why the `--half` test uses
+  `_neural_engine_options()`.
   Verification runs `asyncio.run()` on a worker thread so it also works under a running event loop
   (Jupyter).
 - For `openvino`, `--output` must be an `.xml` path (the `.bin` is written alongside); `--fp16`
