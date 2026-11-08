@@ -125,7 +125,7 @@ class CoreAIBackend(ExportBackend):
                 model, example_input = model.half(), example_input.half()
                 # create_timm_model's exportable=True turns timm's fused attention off (old ONNX
                 # export could not take SDPA). get_decomp_table() keeps SDPA whole for the
-                # runtime's own kernel, without which the Neural Engine runs ViT ~10x slower.
+                # runtime's kernel; without it macOS 27.0.1's Neural Engine runs ViT ~10x slower.
                 _set_fused_attn(model, True)
 
             def capture() -> torch.export.ExportedProgram:

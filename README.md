@@ -116,7 +116,9 @@ on CPU is the slowest of all.
 Core AI needs macOS 27 to run at speed (on macOS 26.5 it took roughly 400 ms per call). On the same
 M1 with macOS 27.0.1, a default export runs on the GPU (resnet50 8.4 ms, vit_small 9.6 ms), and a
 `--half` export loaded with the Neural Engine preferred is the fastest path measured: resnet50
-1.9 ms, vit_small 3.0 ms, efficientnet_b0 0.8 ms, mobilenetv4_conv_small 0.6 ms.
+1.9 ms, vit_small 3.0 ms, efficientnet_b0 0.8 ms, mobilenetv4_conv_small 0.6 ms. On macOS 27.2 CNNs
+still reach the Neural Engine (resnet50 1.8 ms), but attention models stay at GPU speed even with it
+preferred (vit_small 8.2 ms).
 
 ## Model Info
 
@@ -245,10 +247,12 @@ uv run timmx export coreai vit_small_patch16_224 \
 > `SpecializationOptions.default()` (GPU) and the Neural Engine preference both work.
 
 > **Note:** `--half` also turns timm's fused attention (SDPA) back on, which the Neural Engine
-> needs for transformer speed (vit_small 3 ms instead of 30 ms on an M1). Models whose attention
-> runs over 5-D tensors (twins, hiera) keep the unfused form, because Apple's Neural Engine compiler
-> aborts the process on 5-D SDPA. hiera's `--half` export still fails verification: the Neural
-> Engine returns wrong outputs for it, although PyTorch's own float16 run is fine.
+> needed for transformer speed on macOS 27.0.1 (vit_small 3 ms instead of 30 ms on an M1; on macOS
+> 27.2 it stays at GPU speed, about 8 ms, either way). Models whose attention runs over 5-D tensors
+> (twins, hiera) keep the unfused form, because Apple's Neural Engine compiler aborted the process
+> on 5-D SDPA on macOS 27.0.1. hiera's `--half` export failed verification there (the Neural Engine
+> returned wrong outputs, although PyTorch's own float16 run is fine); on macOS 27.2 it passes, at
+> GPU speed.
 
 > **Note:** conversion works on macOS and Linux, but the Core AI runtime only executes on Apple
 > platforms. On Linux `--verify` therefore only checks that the asset reads back, and cannot
