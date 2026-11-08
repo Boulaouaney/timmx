@@ -25,3 +25,11 @@ def test_verify_outputs_rejects_divergent_output() -> None:
     expected = torch.randn(2, 10)
     with pytest.raises(ExportError, match="diverges from PyTorch"):
         verify_outputs(expected, (-expected).numpy(), backend="test")
+
+
+def test_verify_outputs_rejects_nan_output() -> None:
+    expected = torch.randn(1, 4)
+    produced = expected.numpy().copy()
+    produced[0, 0] = np.nan
+    with pytest.raises(ExportError, match="diverges"):
+        verify_outputs(expected, produced, backend="test")

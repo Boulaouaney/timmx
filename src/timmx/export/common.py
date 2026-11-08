@@ -284,7 +284,8 @@ def verify_outputs(expected: torch.Tensor, actual: object, *, backend: str) -> N
     cosine = float(((reference * produced).sum(axis=1) / norms).mean())
     max_abs = float(np.abs(reference - produced).max())
     console.print(f"verify: cosine similarity {cosine:.4f}, max abs diff {max_abs:.3g} vs PyTorch")
-    if cosine < VERIFY_MIN_COSINE:
+    # `not >=` so a NaN cosine (inf/NaN in either output) fails too.
+    if not cosine >= VERIFY_MIN_COSINE:
         raise ExportError(
             f"{backend} output diverges from PyTorch (cosine similarity {cosine:.3f} < "
             f"{VERIFY_MIN_COSINE}). The exported file was kept for inspection; "

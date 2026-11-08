@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from timmx.errors import ConfigurationError
+from timmx.export import coreai_backend
 from timmx.export.common import create_timm_model, wrap_with_preprocessing
 from timmx.export.coreai_backend import CoreAIBackend
 
@@ -30,6 +31,7 @@ def _build_kwargs(output_path: Path, **overrides: object) -> dict:
         "input_size": (3, 32, 32),
         "dynamic_batch": False,
         "device": "cpu",
+        "half": False,
         "verify": True,
         "normalize": False,
         "softmax": False,
@@ -40,11 +42,13 @@ def _build_kwargs(output_path: Path, **overrides: object) -> dict:
     return kwargs
 
 
-def _run_asset(output_path: Path, x: torch.Tensor) -> np.ndarray:
+def _run_asset(output_path: Path, x: torch.Tensor, *, neural_engine: bool = False) -> np.ndarray:
     from coreai.runtime import AIModel, NDArray
 
+    options = coreai_backend._neural_engine_options() if neural_engine else None
+
     async def run() -> np.ndarray:
-        model = await AIModel.load(output_path)
+        model = await AIModel.load(output_path, options)
         function = model.load_function("main")
         assert function.desc.input_names == ["input"]
         assert function.desc.output_names == ["output"]
@@ -91,6 +95,88 @@ def test_export_coreai_names_io_and_matches_pytorch(tmp_path: Path) -> None:
     np.testing.assert_allclose(
         _run_asset(output_path, x), reference(x).detach().numpy(), atol=1e-4, rtol=1e-4
     )
+
+
+class _Captured(Exception):
+    pass
+
+
+def _spy_on_capture(monkeypatch: pytest.MonkeyPatch, stop_at: int) -> list[tuple]:
+    """Record (weight dtype, input dtype, fused_attn flags) per capture; stop at the `stop_at`th."""
+    calls: list[tuple] = []
+    capture_program = coreai_backend.capture_program
+
+    def spy(model: torch.nn.Module, example_input: torch.Tensor, **kwargs: object) -> object:
+        fused = [m.fused_attn for m in model.modules() if hasattr(m, "fused_attn")]
+        calls.append((next(model.parameters()).dtype, example_input.dtype, fused))
+        if len(calls) == stop_at:
+            raise _Captured
+        return capture_program(model, example_input, **kwargs)
+
+    monkeypatch.setattr(coreai_backend, "capture_program", spy)
+    return calls
+
+
+def test_half_captures_float16_model_with_fused_attention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _spy_on_capture(monkeypatch, stop_at=1)
+    with pytest.raises(_Captured):
+        CoreAIBackend().create_command()(
+            **_build_kwargs(
+                tmp_path / "vit.aimodel",
+                model_name="vit_tiny_patch16_224",
+                input_size=None,
+                half=True,
+            )
+        )
+
+    [(weight_dtype, input_dtype, fused)] = calls
+    assert weight_dtype == input_dtype == torch.float16
+    assert fused and all(fused)
+
+
+def test_half_unfuses_attention_over_5d_tensors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # twins' locally grouped attention runs SDPA on 5-D tensors, which aborts the ANE compiler.
+    calls = _spy_on_capture(monkeypatch, stop_at=2)
+    with pytest.raises(_Captured):
+        CoreAIBackend().create_command()(
+            **_build_kwargs(
+                tmp_path / "twins.aimodel", model_name="twins_svt_small", input_size=None, half=True
+            )
+        )
+
+    assert [all(fused) for _, _, fused in calls] == [True, False]
+    assert not any(calls[1][2])
+
+
+@requires_runtime
+def test_half_export_has_float16_io_and_matches_pytorch(tmp_path: Path) -> None:
+    seed = 789
+    x = torch.rand(1, 3, 32, 32)
+
+    torch.manual_seed(seed)
+    reference = create_timm_model(
+        "resnet18", pretrained=False, checkpoint=None, num_classes=None, in_chans=None
+    ).eval()
+
+    output_path = tmp_path / "resnet18_half.aimodel"
+    torch.manual_seed(seed)
+    CoreAIBackend().create_command()(**_build_kwargs(output_path, half=True))
+
+    actual = _run_asset(output_path, x.half(), neural_engine=True)
+    assert actual.dtype == np.float16
+    np.testing.assert_allclose(actual, reference(x).detach().numpy(), atol=1e-2, rtol=1e-2)
+
+
+@requires_runtime
+def test_verify_works_inside_a_running_event_loop(tmp_path: Path) -> None:
+    async def export() -> Path:
+        return CoreAIBackend().create_command()(**_build_kwargs(tmp_path / "resnet18.aimodel"))
+
+    assert asyncio.run(export()).is_dir()
 
 
 @requires_runtime
