@@ -240,6 +240,10 @@ uv run timmx export coreai vit_small_patch16_224 \
   --output ./artifacts/vit_small_fp16.aimodel
 ```
 
+> **Note:** always load a `--half` asset with options. On an M1 with macOS 27,
+> `AIModel.load(path)` without them fails in the Neural Engine driver, while
+> `SpecializationOptions.default()` (GPU) and the Neural Engine preference both work.
+
 > **Note:** `--half` also turns timm's fused attention (SDPA) back on, which the Neural Engine
 > needs for transformer speed (vit_small 3 ms instead of 30 ms on an M1). Models whose attention
 > runs over 5-D tensors (twins, hiera) keep the unfused form, because Apple's Neural Engine compiler
