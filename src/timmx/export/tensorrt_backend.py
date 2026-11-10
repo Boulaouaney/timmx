@@ -338,6 +338,7 @@ class TensorRTBackend(ExportBackend):
             if verify:
                 _verify_engine(
                     trt,
+                    logger,
                     prep.output_path,
                     verify_input,
                     reference_output(prep.model, verify_input),
@@ -349,10 +350,14 @@ class TensorRTBackend(ExportBackend):
 
 
 def _verify_engine(
-    trt: object, engine_path: Path, runtime_input: torch.Tensor, expected: torch.Tensor
+    trt: object,
+    logger: object,
+    engine_path: Path,
+    runtime_input: torch.Tensor,
+    expected: torch.Tensor,
 ) -> None:
     try:
-        runtime = trt.Runtime(trt.Logger(trt.Logger.WARNING))
+        runtime = trt.Runtime(logger)
         engine = runtime.deserialize_cuda_engine(engine_path.read_bytes())
         context = engine.create_execution_context()
         x = runtime_input.cuda().contiguous()
@@ -376,6 +381,7 @@ class _HalfIO(torch.nn.Module):
     def __init__(self, model: torch.nn.Module) -> None:
         super().__init__()
         self.model = model.half()
+        self.train(model.training)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x.half()).float()
